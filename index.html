@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/professor-nutri-favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduFood Family</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+             fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              brand: {
+                background: '#F8F9FE',
+                surface: '#FFFFFF',
+                text: '#0D111C',
+                'text-secondary': '#6B7280',
+                border: '#E5E7EB',
+                primary: '#6D28D9',
+                secondary: '#A855F7',
+                'accent-lime': '#D9F99D',
+                'accent-green': '#A7F3D0',
+                'accent-pink': '#FECDD3',
+                'risk-low': '#16A34A',
+                'risk-medium': '#F59E0B',
+                'risk-high': '#EF4444'
+              },
+            },
+            borderRadius: {
+              '4xl': '2rem',
+            },
+            boxShadow: {
+              'edu': '0 4px 12px rgba(0, 0, 0, 0.08)',
+            }
+          },
+        },
+      };
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.546.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body class="bg-brand-background">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
