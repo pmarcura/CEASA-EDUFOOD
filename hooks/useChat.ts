@@ -1,11 +1,12 @@
 
-import { useState, useContext, useCallback } from 'react';
-import { AppContext } from '../contexts/AppContext';
+import { useState, useCallback, useMemo } from 'react';
 import { processShoppingList, enrichFoodItemsBatch, generateRecipes, processReceiptImage } from '../services/geminiService';
 import type { ChatMessage, PantryItem, AnalysisState, VerifiedItem, Recipe } from '../types';
 
-export const useChat = () => {
-    const context = useContext(AppContext);
+export const useChat = (
+    addItemsToPantry: (items: Omit<PantryItem, 'id'>[]) => Promise<void>,
+    pantry: PantryItem[]
+) => {
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
         { id: 'initial-system-message', role: 'system', text: 'Olá! Eu sou o Professor Nutri. Vamos juntos cuidar da alimentação da sua família! Que tal começar me enviando sua lista de compras ou a foto da sua nota fiscal?' }
     ]);
@@ -28,7 +29,7 @@ export const useChat = () => {
     }, []);
     
     const startEnrichmentProcess = useCallback(async (itemsToProcess: {name: string, quantity: number, unit: string, isFood: boolean}[]) => {
-        if (!context?.addItemsToPantry) return;
+        if (!addItemsToPantry) return;
 
          const analysisMessageId = addMessageToChat({ 
             role: 'model', 
@@ -91,7 +92,7 @@ export const useChat = () => {
             }
         });
 
-        if (newPantryItems.length > 0) await context.addItemsToPantry(newPantryItems);
+        if (newPantryItems.length > 0) await addItemsToPantry(newPantryItems);
         
         updateAnalysis(analysisMessageId, { status: 'done', progress: 100, processedItems: finalProcessedItems });
         
@@ -105,16 +106,15 @@ export const useChat = () => {
         setTimeout(() => {
             addMessageToChat({ role: 'model', text: 'Agora que temos ingredientes novos, que tal eu sugerir algumas receitas saudáveis?', quickReplies: ['Sim, por favor!', 'Agora não'] });
         }, 1000);
-    }, [context?.addItemsToPantry, addMessageToChat]);
+    }, [addItemsToPantry, addMessageToChat]);
 
 
     const handleGenerateRecipes = useCallback(async () => {
-        if (!context) return;
         setIsProcessing(true);
         addMessageToChat({ role: 'model', text: 'Ótima ideia! Deixe-me ver o que posso criar com os ingredientes saudáveis que você tem...' });
 
         try {
-            const healthyItems = context.pantry.filter(item => item.riskLevel === 'Baixo').map(item => item.name);
+            const healthyItems = pantry.filter(item => item.riskLevel === 'Baixo').map(item => item.name);
             if (healthyItems.length < 2) {
                 addMessageToChat({ role: 'model', text: "Hmm, para criar receitas saborosas, preciso de pelo menos 2 ingredientes de baixo risco na sua despensa. Que tal adicionar mais alguns?" });
                 setIsProcessing(false);
@@ -127,7 +127,7 @@ export const useChat = () => {
         } finally {
             setIsProcessing(false);
         }
-    }, [context?.pantry, addMessageToChat]);
+    }, [pantry, addMessageToChat]);
 
     const handleQuickReply = useCallback((reply: string) => {
         clearChatQuickReplies();
@@ -226,5 +226,7 @@ export const useChat = () => {
         }
     }, [addMessageToChat, startEnrichmentProcess, updateMessage]);
 
-    return { chatHistory, isProcessing, sendMessage, handleImageSend, handleQuickReply, handleItemsConfirmed, addMessageToChat, updateMessage, clearChatQuickReplies };
+    return useMemo(() => ({
+        chatHistory, isProcessing, sendMessage, handleImageSend, handleQuickReply, handleItemsConfirmed, addMessageToChat, updateMessage, clearChatQuickReplies
+    }), [chatHistory, isProcessing, sendMessage, handleImageSend, handleQuickReply, handleItemsConfirmed, addMessageToChat, updateMessage, clearChatQuickReplies]);
 };

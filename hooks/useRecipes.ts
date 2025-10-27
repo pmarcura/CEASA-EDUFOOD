@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { collection, onSnapshot, query, where, getDocs, addDoc, writeBatch, doc } from '@firebase/firestore';
+
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { collection, onSnapshot, query, where, getDocs, addDoc, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Recipe, MealLogEntry, MealFeedback, PantryItem, UserProfile } from '../types';
 import { POINTS_CONFIG } from '../helpers/gamification';
@@ -101,5 +103,6 @@ export const useRecipes = (userId?: string, pantry: PantryItem[] = [], userProfi
         }
     }, [userId, pantry, userProfile]);
 
-    return { savedRecipes, saveRecipe, mealLog, logMealCompletion };
+    return useMemo(() => ({ savedRecipes, saveRecipe, mealLog, logMealCompletion }),
+        [savedRecipes, saveRecipe, mealLog, logMealCompletion]);
 };

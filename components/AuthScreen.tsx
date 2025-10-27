@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { auth, provider } from '../firebase/config';
 import { 
@@ -6,7 +7,7 @@ import {
     signInWithEmailAndPassword, 
     updateProfile,
     signInWithPopup
-} from '@firebase/auth';
+} from 'firebase/auth';
 import { LoaderCircle, Mail, Key, User as UserIcon } from 'lucide-react';
 
 const AuthScreen: React.FC = () => {

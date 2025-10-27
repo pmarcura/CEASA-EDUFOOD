@@ -1,7 +1,8 @@
 
-import { useState, useEffect, useCallback } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, addDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, runTransaction } from '@firebase/firestore';
-import { getStorage, ref, uploadString, getDownloadURL } from '@firebase/storage';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { collection, query, orderBy, onSnapshot, doc, addDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, runTransaction } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase/config';
 import type { FeedPost, Comment, User, UserProfile, Recipe } from '../types';
 import { POINTS_CONFIG } from '../helpers/gamification';
@@ -13,7 +14,35 @@ export const useFeed = (user: User | null, userProfile: UserProfile | null) => {
         const feedRef = collection(db, 'feed');
         const q = query(feedRef, orderBy('createdAt', 'desc'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const feedData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FeedPost[];
+            const feedData = snapshot.docs.map(doc => {
+                const data = doc.data();
+                
+                const rawLikes = data.likes;
+                const likes = Array.isArray(rawLikes) ? rawLikes : [];
+
+                const rawComments = data.comments;
+                const comments = Array.isArray(rawComments) ? rawComments.map((c: any) => ({
+                    id: c.id || `${c.authorId || 'unknown'}-${c.timestamp || 0}`,
+                    authorId: c.authorId || '',
+                    authorName: c.authorName || 'Usuário',
+                    authorAvatar: c.authorAvatar || '/professor-nutri.png',
+                    text: c.text || '',
+                    timestamp: c.timestamp || 0,
+                })) : [];
+
+                return {
+                    id: doc.id,
+                    authorId: data.authorId || '',
+                    authorName: data.authorName || 'Usuário Anônimo',
+                    authorAvatar: data.authorAvatar || '/professor-nutri.png',
+                    image: data.image || '',
+                    caption: data.caption || '',
+                    likes: likes,
+                    comments: comments,
+                    createdAt: data.createdAt, // This is handled safely by formatTimeAgo
+                    recipe: data.recipe || undefined,
+                } as FeedPost;
+            });
             setFeedPosts(feedData);
         }, (error) => console.error("Firestore error in feed listener:", error));
 
@@ -94,5 +123,6 @@ export const useFeed = (user: User | null, userProfile: UserProfile | null) => {
         
     }, [user, userProfile]);
 
-    return { feedPosts, createPost, toggleLikePost, addCommentToPost };
+    return useMemo(() => ({ feedPosts, createPost, toggleLikePost, addCommentToPost }),
+        [feedPosts, createPost, toggleLikePost, addCommentToPost]);
 };

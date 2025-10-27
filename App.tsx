@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Camera, Book, BotMessageSquare, Compass, Ticket, LoaderCircle } from 'lucide-react';
 
@@ -31,7 +32,7 @@ const App: React.FC = () => {
   const pantryData = usePantry(user?.uid);
   const recipesData = useRecipes(user?.uid, pantryData.pantry, userProfile);
   const feedData = useFeed(user, userProfile);
-  const chatData = useChat();
+  const chatData = useChat(pantryData.addItemsToPantry, pantryData.pantry);
 
   const [activeTab, setActiveTab] = useState<Tab>('feed');
   const [isProfileOpen, setIsProfileOpen] = useState(false);

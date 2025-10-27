@@ -1,6 +1,7 @@
 
-import { useState, useEffect, useCallback } from 'react';
-import { collection, onSnapshot, query, where, getDocs, addDoc, deleteDoc, updateDoc, doc } from '@firebase/firestore';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { collection, onSnapshot, query, where, getDocs, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { PantryItem } from '../types';
 
@@ -59,5 +60,6 @@ export const usePantry = (userId?: string) => {
         await updateDoc(itemRef, updates);
     }, [userId]);
 
-    return { pantry, addItemsToPantry, removeItemFromPantry, updatePantryItemQuantity, updatePantryItemDetails };
+    return useMemo(() => ({ pantry, addItemsToPantry, removeItemFromPantry, updatePantryItemQuantity, updatePantryItemDetails }),
+        [pantry, addItemsToPantry, removeItemFromPantry, updatePantryItemQuantity, updatePantryItemDetails]);
 };

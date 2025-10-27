@@ -1,7 +1,8 @@
 
-import { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, signOut } from '@firebase/auth';
-import { doc, onSnapshot, setDoc } from '@firebase/firestore';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import type { User, UserProfile } from '../types';
 
@@ -56,5 +57,6 @@ export const useAuth = () => {
         await signOut(auth);
     }, []);
 
-    return { user, userProfile, isLoading, updateUserProfile, logout };
+    return useMemo(() => ({ user, userProfile, isLoading, updateUserProfile, logout }),
+        [user, userProfile, isLoading, updateUserProfile, logout]);
 };

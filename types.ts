@@ -1,7 +1,8 @@
 
+
 import type { ElementType } from 'react';
-import type { User } from '@firebase/auth';
-import type { Timestamp, FieldValue } from '@firebase/firestore';
+import type { User } from 'firebase/auth';
+import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 // Re-export the User type from the v9 SDK
 export type { User };
@@ -202,6 +203,9 @@ export interface AppContextType {
   handleQuickReply: (reply: string) => void;
   handleItemsConfirmed: (messageId: string, verifiedItems: VerifiedItem[]) => Promise<void>;
   updateMessage: (messageId: string, update: Partial<ChatMessage>) => void;
+  // Fix: Add missing properties 'addMessageToChat' and 'clearChatQuickReplies' to match useChat hook return values.
+  addMessageToChat: (message: Omit<ChatMessage, 'id'>) => string;
+  clearChatQuickReplies: () => void;
   // from App.tsx (local UI state)
   viewingRecipe: Recipe | null;
   setViewingRecipe: (recipe: Recipe | null) => void;

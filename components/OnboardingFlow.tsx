@@ -1,6 +1,7 @@
 
+
 import React, { useState } from 'react';
-import { doc, setDoc } from '@firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { User, UserProfile } from '../types';
 
