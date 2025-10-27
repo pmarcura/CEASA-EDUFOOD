@@ -16,41 +16,68 @@
              fontFamily: {
               sans: ['Inter', 'sans-serif'],
             },
+            spacing: {
+              '0.5': '2px', '1': '4px', '1.5': '6px', '2': '8px', '2.5': '10px', '3': '12px', '3.5': '14px', '4': '16px', '5': '20px', '6': '24px', '7': '28px', '8': '32px', '10': '40px', '12': '48px', '14': '56px', '16': '64px', '20': '80px',
+            },
             colors: {
               brand: {
-                background: '#F8F9FE',
+                background: '#F9FAFB', // Gray 50 - Softer background
                 surface: '#FFFFFF',
-                text: '#0D111C',
-                'text-secondary': '#6B7280',
-                border: '#E5E7EB',
-                primary: '#6D28D9',
-                secondary: '#A855F7',
-                'accent-lime': '#D9F99D',
-                'accent-green': '#A7F3D0',
-                'accent-pink': '#FECDD3',
-                'risk-low': '#16A34A',
-                'risk-medium': '#F59E0B',
-                'risk-high': '#EF4444'
+                text: '#111827', // Gray 900
+                'text-secondary': '#6B7280', // Gray 500
+                border: '#E5E7EB', // Gray 200
+                'primary-light': '#D1FAE5', // Emerald 100
+                primary: '#10B981', // Emerald 500 (WCAG AA compliant on white)
+                'primary-dark': '#059669', // Emerald 600
+                'risk-low': '#16A34A', // Green 600
+                'risk-medium': '#F59E0B', // Amber 500
+                'risk-high': '#EF4444', // Red 500
               },
             },
             borderRadius: {
-              '4xl': '2rem',
+              'sm': '4px', 'md': '8px', 'lg': '12px', 'xl': '16px', '2xl': '24px', '3xl': '32px', 'full': '9999px',
             },
             boxShadow: {
-              'edu': '0 4px 12px rgba(0, 0, 0, 0.08)',
+              'edu': '0 2px 8px 0 rgba(0, 0, 0, 0.04)',
+              'edu-lg': '0 8px 20px -4px rgba(0, 0, 0, 0.06), 0 6px 8px -5px rgba(0, 0, 0, 0.05)',
+            },
+            fontSize: {
+              'xs': ['12px', '16px'], 'sm': ['14px', '20px'], 'base': ['16px', '24px'], 'lg': ['18px', '24px'], 'xl': ['20px', '28px'], '2xl': ['24px', '32px'], '3xl': ['28px', '36px'], '4xl': ['32px', '40px'],
+            },
+            keyframes: {
+              'fade-in': {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+            },
+            animation: {
+              'fade-in': 'fade-in 0.5s ease-out forwards',
             }
           },
         },
       };
     </script>
+    <style>
+      /* Garante texto de alto contraste nos inputs */
+      input, textarea {
+        color: #111827; /* brand.text */
+      }
+      input::placeholder, textarea::placeholder {
+        color: #6B7280; /* brand.text-secondary */
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react-dom/": "https://aistudiocdn.com/react@^19.2.0/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.546.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "@firebase/auth": "https://aistudiocdn.com/@firebase/auth@^1.11.0",
+    "@firebase/app": "https://aistudiocdn.com/@firebase/app@^0.14.4",
+    "@firebase/storage": "https://aistudiocdn.com/@firebase/storage@^0.14.0",
+    "@firebase/firestore": "https://aistudiocdn.com/@firebase/firestore@^4.9.2"
   }
 }
 </script>

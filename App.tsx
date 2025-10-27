@@ -1,121 +1,136 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { Book, Award, BotMessageSquare, Home } from 'lucide-react';
 
-import type { PantryItem, Recipe, Tab, ChatMessage, AnalysisState } from './types';
+import React, { useState, useMemo } from 'react';
+import { Camera, Book, BotMessageSquare, Compass, Ticket, LoaderCircle } from 'lucide-react';
+
+import type { Tab, Recipe } from './types';
 import { AppContext } from './contexts/AppContext';
-import PantryDisplay from './components/PantryDisplay';
-import HomeScreen from './components/HomeScreen';
-import ProgressTracker from './components/ProgressTracker';
-import ProfessorNutriChat from './components/ProfessorNutriChat';
-import BottomNav from './components/BottomNav';
+
+// Custom Hooks for logic separation
+import { useAuth } from './hooks/useAuth';
+import { usePantry } from './hooks/usePantry';
+import { useRecipes } from './hooks/useRecipes';
+import { useFeed } from './hooks/useFeed';
+import { useChat } from './hooks/useChat';
+
+// Component Imports from new structure
+import AuthScreen from './components/AuthScreen';
+// Fix: Corrected import path for OnboardingFlow which exists in components/ not components/onboarding/
+import OnboardingFlow from './components/OnboardingFlow';
+import ProfileScreen from './components/profile/ProfileScreen';
+import RecipeDetailView from './components/recipe/RecipeDetailView';
+import CookingModeView from './components/recipe/CookingModeView';
+import PantryDisplay from './components/pantry/PantryDisplay';
+import ExploreScreen from './components/explore/ExploreScreen';
+import OffersScreen from './components/offers/OffersScreen';
+import CreativeFeed from './components/feed/CreativeFeed';
+import ProfessorNutriChat from './components/chat/ProfessorNutriChat';
+import BottomNav from './components/common/BottomNav';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('home');
-  const [pantry, setPantry] = useState<PantryItem[]>([]);
-  const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
-      { role: 'system', text: 'Olá! Eu sou o Professor Nutri. Vamos juntos cuidar da alimentação da sua família! Que tal começar me enviando sua lista de compras?' }
-  ]);
+  const { user, userProfile, isLoading: isAuthLoading, updateUserProfile, logout } = useAuth();
+  const pantryData = usePantry(user?.uid);
+  const recipesData = useRecipes(user?.uid, pantryData.pantry, userProfile);
+  const feedData = useFeed(user, userProfile);
+  const chatData = useChat();
 
-  const addItemsToPantry = useCallback((newItems: PantryItem[]) => {
-    setPantry(prevPantry => {
-      const existingNames = new Set(prevPantry.map(item => item.name.toLowerCase()));
-      const uniqueNewItems = newItems.filter(item => !existingNames.has(item.name.toLowerCase()));
-      return [...prevPantry, ...uniqueNewItems];
-    });
-  }, []);
-
-  const removeItemFromPantry = useCallback((itemId: string) => {
-    setPantry(prevPantry => prevPantry.filter(item => item.id !== itemId));
-  }, []);
-
-  const saveRecipe = useCallback((recipeToSave: Recipe) => {
-    if (!savedRecipes.some(r => r.title === recipeToSave.title)) {
-      setSavedRecipes(prev => [...prev, recipeToSave]);
-    }
-  }, [savedRecipes]);
-
-  const addMessageToChat = useCallback((message: ChatMessage) => {
-    setChatHistory(prev => [...prev, message]);
-  }, []);
-
-  const updateLastMessageAnalysis = useCallback((analysisUpdate: Partial<AnalysisState>) => {
-    setChatHistory(prev => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === 'model' && lastMessage.analysis) {
-            const updatedMessage = {
-                ...lastMessage,
-                analysis: {
-                    ...lastMessage.analysis,
-                    ...analysisUpdate,
-                    processedItems: analysisUpdate.processedItems ? analysisUpdate.processedItems : lastMessage.analysis.processedItems,
-                }
-            };
-            return [...prev.slice(0, -1), updatedMessage];
-        }
-        return prev;
-    });
-  }, []);
+  const [activeTab, setActiveTab] = useState<Tab>('feed');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   
-  const clearChatQuickReplies = useCallback(() => {
-    setChatHistory(prev => prev.map(msg => ({ ...msg, quickReplies: undefined })));
-  }, []);
-
+  // Local UI states for navigation
+  const [viewingRecipe, setViewingRecipe] = useState<Recipe | null>(null);
+  const [isCookingMode, setIsCookingMode] = useState(false);
+  const [cookingRecipe, setCookingRecipe] = useState<Recipe | null>(null);
 
   const contextValue = useMemo(() => ({
-    pantry,
-    addItemsToPantry,
-    removeItemFromPantry,
-    savedRecipes,
-    saveRecipe,
-    chatHistory,
-    addMessageToChat,
-    updateLastMessageAnalysis,
-    clearChatQuickReplies
-  }), [pantry, addItemsToPantry, removeItemFromPantry, savedRecipes, saveRecipe, chatHistory, addMessageToChat, updateLastMessageAnalysis, clearChatQuickReplies]);
-
+    user,
+    userProfile,
+    updateUserProfile,
+    logout,
+    ...pantryData,
+    ...recipesData,
+    ...feedData,
+    ...chatData,
+    viewingRecipe,
+    setViewingRecipe,
+    isCookingMode,
+    setIsCookingMode,
+    cookingRecipe,
+    setCookingRecipe,
+  }), [
+    user, userProfile, updateUserProfile, logout,
+    pantryData, recipesData, feedData, chatData,
+    viewingRecipe, isCookingMode, cookingRecipe
+  ]);
+  
   const renderContent = () => {
     switch (activeTab) {
-      case 'pantry':
-        return <PantryDisplay />;
-      case 'home':
-        return <HomeScreen setActiveTab={setActiveTab} />;
-      case 'progress':
-        return <ProgressTracker />;
-      case 'chat':
-      default:
-        return <ProfessorNutriChat />;
+      case 'pantry': return <PantryDisplay />;
+      case 'explore': return <ExploreScreen />;
+      case 'offers': return <OffersScreen />;
+      case 'feed': return <CreativeFeed />;
+      case 'chat': default: return <ProfessorNutriChat />;
     }
   };
 
   const navItems = [
-    { id: 'home' as Tab, label: 'Início', icon: Home },
+    { id: 'feed' as Tab, label: 'Feed', icon: Camera },
     { id: 'pantry' as Tab, label: 'Despensa', icon: Book },
     { id: 'chat' as Tab, label: 'Chat', icon: BotMessageSquare },
-    { id: 'progress' as Tab, label: 'Progresso', icon: Award },
+    { id: 'explore' as Tab, label: 'Explorar', icon: Compass },
+    { id: 'offers' as Tab, label: 'Ofertas', icon: Ticket },
   ];
+  
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-brand-background flex items-center justify-center">
+        <LoaderCircle className="h-10 w-10 animate-spin text-brand-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+  
+  if (!userProfile?.onboardingCompleted) {
+    return <OnboardingFlow user={user} />;
+  }
+
+  const showMainUI = !viewingRecipe && !isCookingMode;
 
   return (
     <AppContext.Provider value={contextValue}>
+      {isProfileOpen && <ProfileScreen onClose={() => setIsProfileOpen(false)} />}
       <div className="min-h-screen bg-brand-background font-sans text-brand-text flex flex-col">
-        {activeTab !== 'chat' && (
-             <header className="flex items-center justify-between p-4">
-                <h1 className="text-2xl font-bold text-brand-text">
-                  Olá! <br /> Como posso ajudar?
-                </h1>
-                <img 
-                    src="/professor-nutri.png" 
-                    alt="Professor Nutri Mascot" 
-                    className="h-12 w-12 rounded-full object-cover border-2 border-brand-surface shadow-md"
-                />
-            </header>
-        )}
+        {viewingRecipe && !isCookingMode && <RecipeDetailView />}
+        {cookingRecipe && isCookingMode && <CookingModeView />}
         
-        <main className={`flex-grow overflow-y-auto ${activeTab !== 'chat' ? 'p-4' : ''} pb-28`}>
-          {renderContent()}
-        </main>
-        
-        <BottomNav items={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+        <div className={showMainUI ? 'flex flex-col flex-1 w-full max-w-7xl mx-auto' : 'hidden'}>
+          {activeTab !== 'chat' && (
+              <header className="flex items-start justify-between p-4">
+                  <div>
+                      <div className="flex items-center gap-2">
+                         <h1 className="text-2xl font-bold text-brand-text">
+                           Olá, {user.displayName?.split(' ')[0] || 'Família'}!
+                         </h1>
+                      </div>
+                      <p className="text-sm text-brand-text-secondary">Como posso ajudar hoje?</p>
+                  </div>
+                  <img 
+                      src={user.photoURL || "/professor-nutri.png"}
+                      alt="User Avatar" 
+                      onClick={() => setIsProfileOpen(true)}
+                      className="h-12 w-12 rounded-full object-cover border-2 border-brand-surface shadow-md cursor-pointer transition-transform hover:scale-105"
+                  />
+              </header>
+          )}
+          
+          <main className={`flex-1 overflow-y-auto ${activeTab !== 'chat' ? 'p-4' : ''} pb-16`}>
+            {renderContent()}
+          </main>
+          
+          <BottomNav items={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+        </div>
       </div>
     </AppContext.Provider>
   );

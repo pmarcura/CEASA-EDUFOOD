@@ -1,6 +1,6 @@
 
 import React from 'react';
-import type { Tab } from '../types';
+import type { Tab } from '../../types';
 
 interface NavItem {
   id: Tab;

@@ -1,11 +1,11 @@
 
 import React, { useContext, useState, useMemo } from 'react';
-import { AppContext } from '../contexts/AppContext';
+import { AppContext } from '../../contexts/AppContext';
 import PantryItemCard from './PantryItemCard';
 import PantryListItem from './PantryListItem';
-import { NOVA_CLASSIFICATION } from '../constants/foodClassifications';
+import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
 import { Search, ChevronDown, X, LayoutGrid, List } from 'lucide-react';
-import type { NovaClassificationKey } from '../types';
+import type { NovaClassificationKey } from '../../types';
 
 const PantryDisplay: React.FC = () => {
     const context = useContext(AppContext);

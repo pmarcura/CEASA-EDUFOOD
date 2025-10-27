@@ -1,11 +1,12 @@
-import React, { useContext, useState } from 'react';
-import type { PantryItem, RiskLevel } from '../types';
-import { AppContext } from '../contexts/AppContext';
+
+import React, { useContext, useState, memo } from 'react';
+import type { PantryItem, RiskLevel } from '../../types';
+import { AppContext } from '../../contexts/AppContext';
 import { X, AlertTriangle, Edit, Save, XCircle } from 'lucide-react';
-import DynamicIcon from './DynamicIcon';
-import { NOVA_CLASSIFICATION } from '../constants/foodClassifications';
-import { UNITS } from '../constants/units';
-import { getUnitLabel } from '../helpers/units';
+import DynamicIcon from '../common/DynamicIcon';
+import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
+import { UNITS } from '../../constants/units';
+import { getUnitLabel } from '../../helpers/units';
 
 interface PantryItemCardProps {
     item: PantryItem;
@@ -154,4 +155,4 @@ const PantryItemCard: React.FC<PantryItemCardProps> = ({ item }) => {
     );
 };
 
-export default PantryItemCard;
+export default memo(PantryItemCard);

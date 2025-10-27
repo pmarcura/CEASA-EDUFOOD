@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { LoaderCircle, CheckCircle2, XCircle, ScanLine } from 'lucide-react';
-import type { AnalysisState, NovaClassificationKey, RiskLevel } from '../types';
-import { NOVA_CLASSIFICATION } from '../constants/foodClassifications';
+import type { AnalysisState, NovaClassificationKey, RiskLevel } from '../../types';
+import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
 
 interface AnalysisProgressCardProps {
     analysis: AnalysisState;
