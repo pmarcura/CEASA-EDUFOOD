@@ -1,10 +1,8 @@
-
-
 import React, { useState } from 'react';
 import { auth, provider } from '../firebase/config';
 import { 
-    createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
+    createUserWithEmailAndPassword, 
     updateProfile,
     signInWithPopup
 } from 'firebase/auth';

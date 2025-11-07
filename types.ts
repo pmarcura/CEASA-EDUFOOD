@@ -1,15 +1,11 @@
 
-
 import type { ElementType } from 'react';
 import type { User } from 'firebase/auth';
-import type { Timestamp, FieldValue } from 'firebase/firestore';
 
-// Re-export the User type from the v9 SDK
 export type { User };
 export type NovaClassificationKey = 'in_natura' | 'culinary_ingredients' | 'processed' | 'ultra_processed';
 export type RiskLevel = 'Baixo' | 'Médio' | 'Alto';
-export type Tab = 'feed' | 'pantry' | 'chat' | 'explore' | 'offers';
-export type AgeRecommendation = 'infants' | 'toddlers' | 'everyone';
+export type Tab = 'home' | 'chat' | 'pantry' | 'progress' | 'feed';
 export type MealFeedback = 'disliked' | 'ok' | 'liked';
 
 // Onboarding Types
@@ -30,11 +26,11 @@ export interface UserProfile {
   dietaryRestrictions?: string[];
   goals?: FamilyGoal[];
   pantryHabit?: PantryManagementHabit;
-  points?: number;
 }
 export interface UserDocument extends UserProfile {
     // This could be expanded later with other top-level user data
 }
+
 
 export interface PantryItem {
   id: string;
@@ -43,7 +39,7 @@ export interface PantryItem {
   unit: string;
   novaClassification: NovaClassificationKey;
   codexCategory: string;
-  notRecommendedFor: AgeRecommendation[];
+  ageWarningTag: string;
   riskLevel: RiskLevel;
   icon: string;
   color: string;
@@ -93,7 +89,11 @@ export interface MealLogEntry {
     timestamp: number;
     feedback: MealFeedback;
     serves: string;
-    imageUrl?: string;
+    foodGroupPortions?: {
+        proteins: number;
+        grains: number;
+        vegetables: number;
+    };
 }
 
 export interface AnalysisState {
@@ -150,67 +150,44 @@ export interface Achievement {
     isUnlocked: (context: AppContextType) => boolean;
 }
 
-export interface Comment {
-  id: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  text: string;
-  timestamp: number;
-}
-
 export interface FeedPost {
-  id:string;
-  authorId: string;
+  id: string;
   authorName: string;
   authorAvatar: string;
   image: string;
   caption: string;
-  likes: string[]; // Array of user IDs
-  comments: Comment[];
-  createdAt: Timestamp | { toDate: () => Date } | FieldValue;
+  reactions: {
+    inspiring: number;
+    colorful: number;
+    creative: number;
+  };
   recipe?: Recipe;
 }
 
-// AppContextType now reflects the return values of the custom hooks
 export interface AppContextType {
-  // from useAuth
   user: User | null;
   userProfile: UserProfile | null;
-  updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
   logout: () => void;
-  // from usePantry
   pantry: PantryItem[];
   addItemsToPantry: (items: Omit<PantryItem, 'id'>[]) => Promise<void>;
   removeItemFromPantry: (itemId: string) => Promise<void>;
+  removeItemsFromPantry: (itemIds: string[]) => Promise<void>;
   updatePantryItemQuantity: (itemId: string, newQuantity: number) => Promise<void>;
   updatePantryItemDetails: (itemId: string, updates: Partial<Omit<PantryItem, 'id'>>) => Promise<void>;
-  // from useRecipes
   savedRecipes: Recipe[];
   saveRecipe: (recipe: Recipe) => Promise<void>;
-  mealLog: MealLogEntry[];
-  logMealCompletion: (recipe: Recipe, feedback: MealFeedback, imageUrl?: string) => Promise<void>;
-  // from useFeed
-  feedPosts: FeedPost[];
-  createPost: (postData: { caption: string; image: string; recipe?: Recipe }) => Promise<void>;
-  toggleLikePost: (postId: string) => Promise<void>;
-  addCommentToPost: (postId: string, text: string) => Promise<void>;
-  // from useChat
   chatHistory: ChatMessage[];
-  isProcessing: boolean;
-  sendMessage: (messageText: string) => Promise<void>;
-  handleImageSend: (imageDataUrl: string, file: File) => Promise<void>;
-  handleQuickReply: (reply: string) => void;
-  handleItemsConfirmed: (messageId: string, verifiedItems: VerifiedItem[]) => Promise<void>;
-  updateMessage: (messageId: string, update: Partial<ChatMessage>) => void;
-  // Fix: Add missing properties 'addMessageToChat' and 'clearChatQuickReplies' to match useChat hook return values.
   addMessageToChat: (message: Omit<ChatMessage, 'id'>) => string;
+  updateMessage: (messageId: string, messageUpdate: Partial<ChatMessage>) => void;
   clearChatQuickReplies: () => void;
-  // from App.tsx (local UI state)
+  feedPosts: FeedPost[];
+  addPostToFeed: (post: Omit<FeedPost, 'id' | 'reactions'>) => void;
   viewingRecipe: Recipe | null;
   setViewingRecipe: (recipe: Recipe | null) => void;
   isCookingMode: boolean;
   setIsCookingMode: (isCooking: boolean) => void;
   cookingRecipe: Recipe | null;
   setCookingRecipe: (recipe: Recipe | null) => void;
+  mealLog: MealLogEntry[];
+  logMealCompletion: (recipe: Recipe, feedback: MealFeedback) => Promise<void>;
 }
