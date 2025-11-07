@@ -3,10 +3,11 @@ import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { AppContext } from '../../contexts/AppContext';
 import PantryItemCard from './PantryItemCard';
 import PantryListItem from './PantryListItem';
-import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
-import { UNITS } from '../../constants/units';
-import { Search, ChevronDown, X, LayoutGrid, List, Trash2, Edit } from 'lucide-react';
+import { Search, LayoutGrid, List, Trash2, Filter } from 'lucide-react';
 import type { NovaClassificationKey, PantryItem } from '../../types';
+import { enrichFoodItemsBatch } from '../../services/geminiService';
+import { ACTION_XP_VALUES } from '../../services/gamificationService';
+import PantryFilterModal from './modals/PantryFilterModal';
 
 const PantryDisplay: React.FC = () => {
     const context = useContext(AppContext);
@@ -16,14 +17,16 @@ const PantryDisplay: React.FC = () => {
     const [selectedNova, setSelectedNova] = useState<NovaClassificationKey | 'all'>('all');
     const [selectedCodex, setSelectedCodex] = useState<string>('all');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
     
     // Interaction States
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-    const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+    const [editingItemId, setEditingItemId] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     if (!context) return <div>Carregando contexto...</div>;
-    const { pantry, removeItemsFromPantry, updatePantryItemDetails } = context;
+    const { pantry, removeItemsFromPantry, updatePantryItemDetails, removeItemFromPantry, awardXp } = context;
 
     const availableCodexCategories = useMemo(() => {
         const categories = new Set(pantry.map(item => item.codexCategory));
@@ -54,6 +57,7 @@ const PantryDisplay: React.FC = () => {
     const handleToggleSelectionMode = () => {
         setIsSelectionMode(!isSelectionMode);
         setSelectedItems(new Set());
+        setEditingItemId(null); // Exit edit mode when toggling selection
     };
     
     const handleDeleteSelected = async () => {
@@ -62,9 +66,68 @@ const PantryDisplay: React.FC = () => {
         setSelectedItems(new Set());
     };
     
-    const handleSaveEdit = async (id: string, quantity: number, unit: string) => {
-        await updatePantryItemDetails(id, { quantity, unit });
-        setEditingItem(null);
+    const handleEditRequest = (itemId: string) => {
+        setIsSelectionMode(false); // Ensure we're not in selection mode
+        setEditingItemId(itemId);
+    };
+
+    const handleSaveEdit = async (id: string, updates: Partial<Omit<PantryItem, 'id'>>) => {
+        if (Object.keys(updates).length === 0) {
+            setEditingItemId(null);
+            return;
+        }
+        setIsSaving(true);
+        const originalItem = pantry.find(item => item.id === id);
+        if (!originalItem) {
+            console.error("Item não encontrado para edição");
+            setIsSaving(false);
+            return;
+        }
+    
+        if (updates.name && updates.name.trim() && updates.name.toLowerCase() !== originalItem.name.toLowerCase()) {
+            try {
+                const enrichedDataArray = await enrichFoodItemsBatch([updates.name]);
+                if (enrichedDataArray.length > 0) {
+                    const enrichedData = enrichedDataArray[0];
+                    const finalUpdates: Partial<PantryItem> = {
+                        ...updates,
+                        novaClassification: enrichedData.novaClassification,
+                        codexCategory: enrichedData.codexCategory,
+                        ageWarningTag: enrichedData.ageWarningTag,
+                        riskLevel: enrichedData.riskLevel,
+                        icon: enrichedData.icon,
+                        color: enrichedData.color,
+                        nutritionalInfo: enrichedData.nutritionalInfo,
+                        tags: enrichedData.tags,
+                        tipRead: false,
+                    };
+                    await updatePantryItemDetails(id, finalUpdates);
+
+                    // Gamification: Award XP if the item became healthier
+                    const novaOrder = { 'in_natura': 4, 'culinary_ingredients': 3, 'processed': 2, 'ultra_processed': 1 };
+                    const oldNovaValue = novaOrder[originalItem.novaClassification] || 0;
+                    const newNovaValue = novaOrder[finalUpdates.novaClassification!] || 0;
+                    if (newNovaValue > oldNovaValue) {
+                        awardXp(ACTION_XP_VALUES.HEALTHY_EDIT, "Fez uma troca saudável!");
+                    }
+
+                } else {
+                    await updatePantryItemDetails(id, updates);
+                }
+            } catch (error) {
+                console.error("Erro ao enriquecer o item:", error);
+                await updatePantryItemDetails(id, updates);
+            }
+        } else {
+            await updatePantryItemDetails(id, updates);
+        }
+        
+        setIsSaving(false);
+        setEditingItemId(null);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingItemId(null);
     };
 
     if (pantry.length === 0 && !context) {
@@ -80,7 +143,7 @@ const PantryDisplay: React.FC = () => {
         );
     }
     
-    const hasActiveFilters = searchTerm || selectedNova !== 'all' || selectedCodex !== 'all';
+    const activeFilterCount = (selectedNova !== 'all' ? 1 : 0) + (selectedCodex !== 'all' ? 1 : 0);
     
     const clearFilters = () => {
         setSearchTerm('');
@@ -102,29 +165,30 @@ const PantryDisplay: React.FC = () => {
                     </div>
                 </div>
             </div>
-
-             <div className="bg-brand-surface p-3 rounded-xl shadow-edu mb-6 space-y-3">
-                <div className="relative">
+            
+            <div className="flex gap-2 mb-4">
+                <div className="relative flex-grow">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-text-secondary" />
-                    <input type="text" placeholder="Buscar por nome..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-brand-background border border-brand-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"/>
+                    <input 
+                        type="text" 
+                        placeholder="Buscar por nome..." 
+                        value={searchTerm} 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                        className="w-full bg-brand-surface border border-brand-border rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                    />
                 </div>
-                <div className="space-y-3">
-                     <div className="relative">
-                        <select value={selectedNova} onChange={(e) => setSelectedNova(e.target.value as NovaClassificationKey | 'all')} className="w-full appearance-none bg-brand-background border border-brand-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary">
-                            <option value="all">Todas as Classificações NOVA</option>
-                            {Object.entries(NOVA_CLASSIFICATION).map(([key, value]) => (<option key={key} value={key}>{value.label}</option>))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-text-secondary pointer-events-none" />
-                    </div>
-                     <div className="relative">
-                        <select value={selectedCodex} onChange={(e) => setSelectedCodex(e.target.value)} className="w-full appearance-none bg-brand-background border border-brand-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary">
-                            <option value="all">Todas as Categorias Codex</option>
-                            {availableCodexCategories.map(category => (<option key={category} value={category}>{category}</option>))}
-                        </select>
-                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-text-secondary pointer-events-none" />
-                    </div>
-                </div>
-                 {hasActiveFilters && (<button onClick={clearFilters} className="text-sm text-brand-primary font-semibold flex items-center gap-1 hover:underline"><X size={14}/> Limpar filtros</button>)}
+                <button 
+                    onClick={() => setIsFilterModalOpen(true)} 
+                    className="relative flex-shrink-0 px-3 bg-brand-surface border border-brand-border rounded-lg font-semibold text-sm text-brand-text hover:bg-gray-50"
+                    aria-label="Abrir filtros"
+                >
+                    <Filter size={18} />
+                    {activeFilterCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-primary text-white text-[10px] font-bold ring-2 ring-brand-background">
+                            {activeFilterCount}
+                        </span>
+                    )}
+                </button>
             </div>
             
             {filteredPantry.length > 0 ? (
@@ -137,7 +201,19 @@ const PantryDisplay: React.FC = () => {
                 ) : (
                     <div className="space-y-2">
                         {filteredPantry.map(item => (
-                           <PantryListItem key={item.id} item={item} isSelected={selectedItems.has(item.id)} isSelectionMode={isSelectionMode} onToggleSelection={handleToggleSelection} onEditRequest={() => setEditingItem(item)}/>
+                           <PantryListItem 
+                                key={item.id} 
+                                item={item} 
+                                isSelected={selectedItems.has(item.id)} 
+                                isSelectionMode={isSelectionMode} 
+                                onToggleSelection={handleToggleSelection} 
+                                isEditing={editingItemId === item.id}
+                                isSaving={isSaving && editingItemId === item.id}
+                                onEditRequest={() => handleEditRequest(item.id)}
+                                onCancelEdit={handleCancelEdit}
+                                onSaveEdit={handleSaveEdit}
+                                onDeleteItem={removeItemFromPantry}
+                            />
                         ))}
                     </div>
                 )
@@ -145,6 +221,7 @@ const PantryDisplay: React.FC = () => {
                 <div className="text-center text-brand-text-secondary mt-10 p-6 bg-brand-surface rounded-xl">
                     <h3 className="text-lg font-bold text-brand-text mb-1">Nenhum item encontrado</h3>
                     <p className="text-sm">Tente ajustar seus filtros ou adicione mais itens à sua despensa.</p>
+
                 </div>
             )}
 
@@ -157,42 +234,16 @@ const PantryDisplay: React.FC = () => {
                 </div>
             )}
             
-            {editingItem && <EditItemModal item={editingItem} onSave={handleSaveEdit} onClose={() => setEditingItem(null)} />}
-        </div>
-    );
-};
-
-// Edit Modal Component
-const EditItemModal: React.FC<{ item: PantryItem, onSave: (id: string, quantity: number, unit: string) => void, onClose: () => void }> = ({ item, onSave, onClose }) => {
-    const [quantity, setQuantity] = useState(item.quantity);
-    const [unit, setUnit] = useState(item.unit);
-
-    const handleSaveClick = () => {
-        onSave(item.id, Number(quantity), unit);
-    };
-    
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-brand-surface rounded-2xl shadow-lg w-full max-w-sm p-5">
-                <h3 className="text-lg font-bold text-brand-text mb-1">Editar Item</h3>
-                <p className="text-brand-text-secondary mb-4 capitalize">{item.name}</p>
-                <div className="space-y-3">
-                    <div>
-                        <label className="text-sm font-semibold text-brand-text-secondary block mb-1">Quantidade</label>
-                        <input type="number" value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="w-full bg-brand-background border border-brand-border rounded-lg p-2.5 text-sm" min="0"/>
-                    </div>
-                    <div>
-                        <label className="text-sm font-semibold text-brand-text-secondary block mb-1">Unidade</label>
-                         <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full bg-brand-background border border-brand-border rounded-lg p-2.5 text-sm">
-                            {UNITS.map(u => <option key={u.value} value={u.value}>{u.description} ({u.value})</option>)}
-                        </select>
-                    </div>
-                </div>
-                <div className="flex justify-end gap-3 mt-6">
-                    <button onClick={onClose} className="px-4 py-2 rounded-lg text-brand-text-secondary font-semibold hover:bg-gray-100">Cancelar</button>
-                    <button onClick={handleSaveClick} className="px-5 py-2 rounded-lg bg-brand-primary text-white font-bold hover:bg-brand-dark">Salvar</button>
-                </div>
-            </div>
+             <PantryFilterModal
+                isOpen={isFilterModalOpen}
+                onClose={() => setIsFilterModalOpen(false)}
+                selectedNova={selectedNova}
+                setSelectedNova={setSelectedNova}
+                selectedCodex={selectedCodex}
+                setSelectedCodex={setSelectedCodex}
+                availableCodexCategories={availableCodexCategories}
+                onClearFilters={clearFilters}
+            />
         </div>
     );
 };

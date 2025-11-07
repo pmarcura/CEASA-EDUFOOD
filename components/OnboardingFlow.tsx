@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -6,7 +5,7 @@ import type { User, UserProfile } from '../types';
 
 import WelcomeStep from './onboarding/WelcomeStep';
 import CookingHabitsStep from './onboarding/CookingHabitsStep';
-import FamilyProfileStep from './onboarding/FamilyProfileStep';
+import ChildDetailsStep from './onboarding/ChildDetailsStep';
 import GoalsStep from './onboarding/GoalsStep';
 import PantryHabitsStep from './onboarding/PantryHabitsStep';
 import SummaryStep from './onboarding/SummaryStep';
@@ -44,10 +43,16 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user }) => {
 
   const handleFinish = async (data: Partial<UserProfile> = {}) => {
     setIsLoading(true);
+    // FIX: Add missing required fields to satisfy the UserProfile type.
     const finalProfile: UserProfile = {
       ...profileData,
       ...data,
       onboardingCompleted: true,
+      xp: 0, // Initialize XP
+      level: 1, // Initialize level
+      goldenCarrots: 0,
+      dailyMission: { id: 'add-in-natura-2', completed: true, lastReset: 0 },
+      weeklyMission: { id: 'cook-recipes-3', completed: true, lastReset: 0 },
     };
     
     try {
@@ -78,7 +83,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user }) => {
       case 2:
         return <CookingHabitsStep onNext={handleNext} onBack={handleBack} data={profileData} />;
       case 3:
-        return <FamilyProfileStep onNext={handleNext} onBack={handleBack} data={profileData} />;
+        return <ChildDetailsStep onNext={handleNext} onBack={handleBack} data={profileData} />;
       case 4:
         return <GoalsStep onNext={handleNext} onBack={handleBack} data={profileData} />;
       case 5:

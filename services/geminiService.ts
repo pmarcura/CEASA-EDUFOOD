@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Recipe, NovaClassificationKey, RiskLevel } from '../types';
+import type { Recipe, NovaClassificationKey, RiskLevel, NutritionalInfo, ChatMessage } from '../types';
 import { CODEX_CATEGORIES } from "../constants/foodClassifications";
 
 // Assume API_KEY is set in the environment
@@ -30,6 +29,13 @@ function getErrorMessage(error: unknown): string {
     return message;
 }
 
+function getMealTime(): string {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return "Café da Manhã";
+    if (hour >= 12 && hour < 18) return "Almoço ou Lanche da Tarde";
+    return "Jantar";
+}
+
 
 interface ParsedItem {
   name: string;
@@ -45,7 +51,7 @@ export interface EnrichedData {
   riskLevel: RiskLevel;
   icon: string;
   color: string;
-  healthTip: string;
+  nutritionalInfo: NutritionalInfo;
   tags: string[];
   name:string;
 }
@@ -97,7 +103,12 @@ export const processShoppingList = async (text: string): Promise<ParsedItem[]> =
     try {
         const response = await ai.models.generateContent({
             model: "gemini-flash-latest",
-            contents: `You are a shopping list parser. Analyze the user's text: "${text}". Extract each item. For each item, provide its name, quantity, and unit (e.g., for "2 pacotes de arroz", quantity is 2 and unit is "pacote"). If quantity or unit is not specified for an item, default to quantity: 1 and unit: 'un'. Also determine if it's a food item. Respond ONLY with a valid JSON array matching the provided schema. If the text is empty or contains no items, return an empty array.`,
+            contents: `You are a shopping list parser. Your ONLY job is to identify and extract items from a list. Analyze the user's text: "${text}".
+- Extract each item, its name, quantity, and unit (e.g., for "2 pacotes de arroz", name is "arroz", quantity is 2, unit is "pacote").
+- If quantity or unit is not specified, default to quantity: 1 and unit: 'un'.
+- Also determine if each item is a food item ('isFood': true/false).
+- CRUCIALLY: If the user's text is NOT a shopping list, but is a question, a command, a request for a recipe, or a conversation starter (e.g., "o que eu faço para o almoço?", "queria uma receita com frango", "arroz é saudável?"), you MUST return an empty array [].
+- Respond ONLY with a valid JSON array matching the provided schema.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -108,37 +119,40 @@ export const processShoppingList = async (text: string): Promise<ParsedItem[]> =
                             name: { type: Type.STRING },
                             quantity: { type: Type.NUMBER },
                             unit: { type: Type.STRING },
-                            isFood: { type: Type.BOOLEAN },
+                            isFood: { type: Type.BOOLEAN }
                         },
                         required: ["name", "quantity", "unit", "isFood"]
                     },
                 },
             },
         });
+        
         const jsonResponse = JSON.parse(response.text);
         return jsonResponse;
 
     } catch (error) {
-        console.error("Error processing shopping list:", error);
-        throw new Error(`Error processing shopping list:\n${getErrorMessage(error)}`);
+        console.error("Error parsing shopping list:", error);
+        throw new Error(`Error parsing shopping list:\n${getErrorMessage(error)}`);
     }
 };
 
+
 export const enrichFoodItemsBatch = async (itemNames: string[]): Promise<EnrichedData[]> => {
-    if (itemNames.length === 0) return [];
     try {
         const response = await ai.models.generateContent({
             model: "gemini-flash-latest",
-            contents: `You are a food nutrition expert aligned with Brazilian food guides. For each food name in this list: [${itemNames.join(', ')}], provide a detailed analysis. Your response must be a valid JSON array. For each item, provide:
-1.  'name': (string) exactly as provided in the input list.
-2.  'novaClassification': (string) Classify according to the 4 NOVA groups. Must be one of: 'in_natura', 'culinary_ingredients', 'processed', 'ultra_processed'.
-3.  'codexCategory': (string) Choose the most relevant category from this list: [${CODEX_CATEGORIES.join(', ')}].
-4.  'ageWarningTag': (string) A short warning tag if the food is not recommended for certain age groups. Use "0-2 anos", "2-5 anos", or "0-5 anos". If safe for everyone, return an empty string "".
-5.  'riskLevel': (string) 'Baixo', 'Médio', or 'Alto' based on nutritional value.
-6.  'icon': (string) a single, relevant lucide-react icon name like 'Apple' or 'Milk'.
-7.  'color': (string) a simple hex code like '#4ade80'.
-8.  'healthTip': (string) A practical, context-aware health tip under 20 words. If the food is 'processed' or 'ultra_processed', the tip must be a warning about the risks of excessive consumption (e.g., "High in sodium, consume in moderation."). If it is 'in_natura' or a 'culinary_ingredient', explain its health benefit (e.g., "Rich in fiber, great for digestion.").
-9.  'tags': (array of strings) 2-3 relevant keywords, including the Codex category.`,
+            contents: `You are a food item data enrichment specialist for a family nutrition app called "EduFood".
+For each food item in this list: [${itemNames.join(', ')}], provide a JSON object with the following details.
+- novaClassification: Classify using one of these keys: 'in_natura', 'culinary_ingredients', 'processed', 'ultra_processed'.
+- codexCategory: Choose the best fit from: ${CODEX_CATEGORIES.join(', ')}.
+- ageWarningTag: If the item is not recommended for a certain age (e.g., honey for under 1s), provide a short tag (e.g., "Após 1 ano"). Otherwise, return an empty string.
+- riskLevel: 'Baixo', 'Médio', or 'Alto' based on nutritional value for a family context.
+- icon: A relevant and simple icon name from the lucide-react library (e.g., "Carrot", "Milk", "Cookie"). Use single, clear names.
+- color: A hex code for a color representing the food (e.g., apple -> "#FF4136").
+- nutritionalInfo: An object with origin (string), benefits (array of strings), risks (array of strings), and nutritionFacts (a brief string summary).
+- tags: An array of 3-5 relevant keywords for searching (e.g., "fruta", "lanche", "vitamina C").
+- name: The original item name, corrected for spelling if necessary.
+Respond ONLY with a valid JSON array of these objects.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -147,156 +161,147 @@ export const enrichFoodItemsBatch = async (itemNames: string[]): Promise<Enriche
                         type: Type.OBJECT,
                         properties: {
                             name: { type: Type.STRING },
-                            novaClassification: { type: Type.STRING },
-                            codexCategory: { type: Type.STRING },
+                            novaClassification: { type: Type.STRING, enum: ['in_natura', 'culinary_ingredients', 'processed', 'ultra_processed'] },
+                            codexCategory: { type: Type.STRING, enum: CODEX_CATEGORIES },
                             ageWarningTag: { type: Type.STRING },
-                            riskLevel: { type: Type.STRING },
+                            riskLevel: { type: Type.STRING, enum: ['Baixo', 'Médio', 'Alto'] },
                             icon: { type: Type.STRING },
                             color: { type: Type.STRING },
-                            healthTip: { type: Type.STRING },
-                            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            nutritionalInfo: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    origin: { type: Type.STRING },
+                                    benefits: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    risks: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    nutritionFacts: { type: Type.STRING },
+                                },
+                                required: ["origin", "benefits", "risks", "nutritionFacts"]
+                            },
+                            tags: { type: Type.ARRAY, items: { type: Type.STRING } }
                         },
-                        required: ["name", "novaClassification", "codexCategory", "ageWarningTag", "riskLevel", "icon", "color", "healthTip", "tags"]
-                    }
+                        required: ["name", "novaClassification", "codexCategory", "ageWarningTag", "riskLevel", "icon", "color", "nutritionalInfo", "tags"]
+                    },
+                },
+            },
+        });
+        
+        const jsonResponse = JSON.parse(response.text);
+        return jsonResponse;
+
+    } catch (error) {
+        console.error("Error enriching food items:", error);
+        throw new Error(`Error enriching food items:\n${getErrorMessage(error)}`);
+    }
+};
+
+export const generateConversationalRecipes = async (
+    userInput: string,
+    pantryItems: string[],
+    chatHistory: { role: 'user' | 'model'; text?: string }[]
+): Promise<{ text: string; recipes: Recipe[] }> => {
+    const mealTime = getMealTime();
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: `You are Professor Nutri, an AI family nutrition assistant. A user is asking for help.
+- User's message: "${userInput}"
+- Current time suggests it is for: ${mealTime}
+- Pantry has: ${pantryItems.join(', ')}. Prioritize using these.
+- Recent conversation: ${JSON.stringify(chatHistory.slice(-4))}
+
+Your tasks:
+1. Write a friendly, encouraging, and brief conversational response.
+2. Generate 1 to 3 simple, healthy, and creative recipes that match the user's request and pantry. The recipes should be appealing to both kids and adults.
+3. For each recipe, provide a complete, structured JSON object.
+
+Respond ONLY with a valid JSON object matching the provided schema.`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        text: { type: Type.STRING, description: "Your conversational response to the user." },
+                        recipes: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: { type: Type.STRING },
+                                    total_time_min: { type: Type.NUMBER },
+                                    serves: { type: Type.STRING },
+                                    level: { type: Type.STRING, enum: ['Fácil', 'Médio', 'Difícil'] },
+                                    context_tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    allergens: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    ingredients: {
+                                        type: Type.ARRAY,
+                                        items: {
+                                            type: Type.OBJECT,
+                                            properties: {
+                                                section: { type: Type.STRING },
+                                                items: {
+                                                    type: Type.ARRAY,
+                                                    items: {
+                                                        type: Type.OBJECT,
+                                                        properties: {
+                                                            name: { type: Type.STRING },
+                                                            quantity: { type: Type.NUMBER },
+                                                            unit: { type: Type.STRING },
+                                                            displayString: { type: Type.STRING }
+                                                        },
+                                                        required: ["name", "quantity", "unit", "displayString"]
+                                                    }
+                                                }
+                                            },
+                                            required: ["section", "items"]
+                                        }
+                                    },
+                                    tools: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    steps: {
+                                        type: Type.ARRAY,
+                                        items: {
+                                            type: Type.OBJECT,
+                                            properties: {
+                                                order: { type: Type.NUMBER },
+                                                title: { type: Type.STRING },
+                                                time_min: { type: Type.NUMBER },
+                                                instruction: { type: Type.STRING },
+                                                child_friendly: { type: Type.STRING },
+                                                safety: { type: Type.STRING },
+                                                tip: { type: Type.STRING },
+                                                utensil: { type: Type.STRING }
+                                            },
+                                            required: ["order", "title", "time_min", "instruction"]
+                                        }
+                                    },
+                                    presentation_suggestion: { type: Type.STRING },
+                                    storage: { type: Type.STRING }
+                                },
+                                required: ["title", "total_time_min", "serves", "level", "ingredients", "tools", "steps", "storage"]
+                            }
+                        }
+                    },
+                    required: ["text", "recipes"]
                 },
             },
         });
         const jsonResponse = JSON.parse(response.text);
         return jsonResponse;
     } catch (error) {
-        console.error("Error enriching items batch:", error);
-        throw new Error(`Error enriching items batch:\n${getErrorMessage(error)}`);
-    }
-};
-
-export const generateRecipes = async (ingredients: string[]): Promise<Recipe[]> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-flash-latest",
-            contents: `You are a creative chef and child nutrition expert specializing in simple, healthy, family-friendly meals. Your persona is "Professor Nutri," who is caring and practical. Based on these ingredients: ${ingredients.join(', ')}, create 2 simple and healthy recipes following a strict JSON structure.
-            
-            For each recipe:
-            - **ingredients**: This is CRITICAL. For each ingredient, provide a 'displayString' (e.g., "1 cenoura média ralada") and also parse it into a structured object with 'name' (the core food item, e.g., 'cenoura'), 'quantity' (numeric, e.g., 1), and 'unit' (e.g., 'un', 'g', 'ml', 'xícara').
-            - **title**: A fun, appealing name.
-            - **total_time_min**: Total preparation and cooking time in minutes.
-            - **serves**: A family-friendly serving size string (e.g., "2 adultos + 1 criança").
-            - **level**: 'Fácil', 'Médio', or 'Difícil'.
-            - **context_tags**: An array of 2-3 context tags (e.g., "Lanche escolar", "Jantar rápido", "Aproveita sobra").
-            - **allergens**: An array of potential allergens present (e.g., "ovo", "leite"). Empty if none.
-            - **tools**: An array of necessary kitchen tools.
-            - **steps**: An array of step objects, each containing:
-                - **order**: (number) The step number.
-                - **title**: A short title for the step.
-                - **time_min**: Estimated time in minutes for this step.
-                - **instruction**: A short, imperative instruction.
-                - **child_friendly**: (optional) A tip on how a child can safely participate.
-                - **safety**: (optional) A safety warning for parents.
-                - **tip**: (optional) A practical tip for parents (e.g., "Pode ser feito de véspera").
-                - **utensil**: (optional) The main utensil for this step.
-            - **presentation_suggestion**: (optional) A fun way to present the dish to a child.
-            - **storage**: A short string on how to store leftovers.
-            
-            Your response must be a valid JSON array of these recipe objects.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING },
-                            total_time_min: { type: Type.NUMBER },
-                            serves: { type: Type.STRING },
-                            level: { type: Type.STRING },
-                            context_tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            allergens: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            ingredients: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        section: { type: Type.STRING },
-                                        items: {
-                                            type: Type.ARRAY,
-                                            items: {
-                                                type: Type.OBJECT,
-                                                properties: {
-                                                    name: { type: Type.STRING },
-                                                    quantity: { type: Type.NUMBER },
-                                                    unit: { type: Type.STRING },
-                                                    displayString: { type: Type.STRING }
-                                                },
-                                                required: ["name", "quantity", "unit", "displayString"]
-                                            }
-                                        },
-                                    },
-                                    required: ["section", "items"],
-                                },
-                            },
-                            tools: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            steps: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        order: { type: Type.NUMBER },
-                                        title: { type: Type.STRING },
-                                        time_min: { type: Type.NUMBER },
-                                        instruction: { type: Type.STRING },
-                                        child_friendly: { type: Type.STRING, nullable: true },
-                                        safety: { type: Type.STRING, nullable: true },
-                                        tip: { type: Type.STRING, nullable: true },
-                                        utensil: { type: Type.STRING, nullable: true },
-                                    },
-                                    required: ["order", "title", "time_min", "instruction"],
-                                },
-                            },
-                            presentation_suggestion: { type: Type.STRING, nullable: true },
-                            storage: { type: Type.STRING },
-                        },
-                        required: ["title", "total_time_min", "serves", "level", "context_tags", "allergens", "ingredients", "tools", "steps", "storage"],
-                    }
-                }
-            }
-        });
-        const jsonResponse = JSON.parse(response.text);
-        return jsonResponse;
-    } catch (error) {
-        console.error("Error generating recipes:", error);
+        console.error("Error generating conversational recipes:", error);
         throw new Error(`Error generating recipes:\n${getErrorMessage(error)}`);
     }
 };
 
-export const generateCreativeSuggestion = async (ingredients: string[]): Promise<{ title: string, description: string }> => {
+export const analyzeRecipeForFoodGroups = async (ingredients: string[]): Promise<{ proteins: number; grains: number; vegetables: number; }> => {
     try {
         const response = await ai.models.generateContent({
             model: "gemini-flash-latest",
-            contents: `You are a fun and creative family chef. Based on these healthy ingredients: ${ingredients.join(', ')}, invent one very creative, fun, and simple dish for kids. Give it a playful name. Your response must be a valid JSON object with 'title' (the playful name) and 'description' (a short, exciting sentence about the dish). Example: {"title": "Foguetes de Cenoura", "description": "Cenouras-foguete com pasta de amendoim e gergelim para uma aventura espacial no lanche!"}`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                    },
-                    required: ["title", "description"]
-                }
-            }
-        });
-        const jsonResponse = JSON.parse(response.text);
-        return jsonResponse;
-    } catch (error) {
-        console.error("Error generating creative suggestion:", error);
-        throw new Error(`Error generating creative suggestion:\n${getErrorMessage(error)}`);
-    }
-};
-
-export const analyzeRecipeForFoodGroups = async (ingredients: string[]): Promise<{ proteins: number, grains: number, vegetables: number }> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-flash-latest",
-            contents: `You are a nutritionist. Analyze this list of ingredients for a recipe: [${ingredients.join(', ')}]. Based on Brazilian dietary guidelines, count how many distinct portions of the main food groups are present. The groups are 'proteins' (meats, eggs, legumes like beans), 'grains' (rice, pasta, bread, tubers like potatoes), and 'vegetables' (vegetables, fruits, greens). One portion is roughly 80-100g. Return a JSON object with the count for each group. Example response: {"proteins": 1, "grains": 1, "vegetables": 2}.`,
+            contents: `Analyze the ingredient list for a single serving of a recipe: [${ingredients.join(', ')}].
+Estimate the number of standard portions for each food group.
+- 'proteins': e.g., meat, fish, eggs, legumes.
+- 'grains': e.g., rice, pasta, bread, potatoes.
+- 'vegetables': e.g., vegetables, fruits.
+Return a simple JSON object with the count for each. A standard portion is about the size of a fist or a deck of cards.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -304,26 +309,25 @@ export const analyzeRecipeForFoodGroups = async (ingredients: string[]): Promise
                     properties: {
                         proteins: { type: Type.NUMBER },
                         grains: { type: Type.NUMBER },
-                        vegetables: { type: Type.NUMBER },
+                        vegetables: { type: Type.NUMBER }
                     },
-                    required: ["proteins", "grains", "vegetables"],
-                }
-            }
+                    required: ["proteins", "grains", "vegetables"]
+                },
+            },
         });
-        return JSON.parse(response.text);
+        const jsonResponse = JSON.parse(response.text);
+        return jsonResponse;
     } catch (error) {
-        console.error("Error analyzing food groups:", error);
-        // Return a default value on error to avoid breaking the meal log
+        console.error("Error analyzing recipe for food groups:", error);
         return { proteins: 0, grains: 0, vegetables: 0 };
     }
 };
 
-export const generateSwaps = async (itemNames: string[]): Promise<{ before: string, after: string, benefit: string }[]> => {
-    if (itemNames.length === 0) return [];
+export const generateSwaps = async (itemNames: string[]): Promise<{ before: string; after: string; benefit: string; }[]> => {
     try {
         const response = await ai.models.generateContent({
             model: "gemini-flash-latest",
-            contents: `You are a family nutritionist. A user has these ultra-processed items in their pantry: [${itemNames.join(', ')}]. Suggest up to 2 practical and healthier swaps for these items. For each swap, provide the original item name, a healthier alternative, and the main benefit. Respond ONLY with a valid JSON array.`,
+            contents: `For the following ultra-processed items [${itemNames.join(', ')}], suggest healthier, simple swaps. For each, provide the original item ('before'), the suggested swap ('after'), and a brief, impactful benefit ('benefit'). Respond ONLY with a valid JSON array.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -331,18 +335,106 @@ export const generateSwaps = async (itemNames: string[]): Promise<{ before: stri
                     items: {
                         type: Type.OBJECT,
                         properties: {
-                            before: { type: Type.STRING, description: "The original ultra-processed item name." },
-                            after: { type: Type.STRING, description: "The suggested healthier alternative." },
-                            benefit: { type: Type.STRING, description: "A short, clear benefit of the swap (e.g., '- Açúcar, + Fibras')." },
+                            before: { type: Type.STRING },
+                            after: { type: Type.STRING },
+                            benefit: { type: Type.STRING }
                         },
-                        required: ["before", "after", "benefit"],
-                    }
-                }
-            }
+                        required: ["before", "after", "benefit"]
+                    },
+                },
+            },
         });
-        return JSON.parse(response.text);
+        const jsonResponse = JSON.parse(response.text);
+        return jsonResponse;
     } catch (error) {
         console.error("Error generating swaps:", error);
         throw new Error(`Error generating swaps:\n${getErrorMessage(error)}`);
+    }
+};
+
+
+export const analyzeUserRecipe = async (
+    title: string,
+    ingredientsText: string,
+    stepsText: string
+): Promise<Recipe> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: `Analyze the user's recipe and structure it as a JSON object.
+            User Input:
+            - Title: "${title}"
+            - Ingredients: "${ingredientsText}"
+            - Steps: "${stepsText}"
+
+            Your task is to generate a complete recipe object. Infer values where necessary (e.g., time, servings, level). Be creative with suggestions.
+            - Parse ingredients into sections (e.g., "Massa", "Recheio") if applicable, otherwise use a single section named "Ingredientes". Each ingredient should have name, quantity, unit, and the original displayString.
+            - Parse steps into an ordered list. For each step, provide a short title, the full instruction, and an estimated time in minutes. Add child-friendly tips, safety warnings, or general tips where appropriate.
+            - Infer total time, servings, difficulty level ('Fácil', 'Médio', 'Difícil'), context tags (e.g., "Lanche Rápido", "Saudável"), common allergens, necessary tools, a presentation suggestion, and storage instructions.
+            Respond ONLY with a valid JSON object matching the provided schema.`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        total_time_min: { type: Type.NUMBER },
+                        serves: { type: Type.STRING },
+                        level: { type: Type.STRING, enum: ['Fácil', 'Médio', 'Difícil'] },
+                        context_tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        allergens: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        ingredients: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    section: { type: Type.STRING },
+                                    items: {
+                                        type: Type.ARRAY,
+                                        items: {
+                                            type: Type.OBJECT,
+                                            properties: {
+                                                name: { type: Type.STRING },
+                                                quantity: { type: Type.NUMBER },
+                                                unit: { type: Type.STRING },
+                                                displayString: { type: Type.STRING }
+                                            },
+                                            required: ["name", "quantity", "unit", "displayString"]
+                                        }
+                                    }
+                                },
+                                required: ["section", "items"]
+                            }
+                        },
+                        tools: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        steps: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    order: { type: Type.NUMBER },
+                                    title: { type: Type.STRING },
+                                    time_min: { type: Type.NUMBER },
+                                    instruction: { type: Type.STRING },
+                                    child_friendly: { type: Type.STRING },
+                                    safety: { type: Type.STRING },
+                                    tip: { type: Type.STRING },
+                                    utensil: { type: Type.STRING }
+                                },
+                                required: ["order", "title", "time_min", "instruction"]
+                            }
+                        },
+                        presentation_suggestion: { type: Type.STRING },
+                        storage: { type: Type.STRING }
+                    },
+                    required: ["title", "total_time_min", "serves", "level", "ingredients", "tools", "steps", "storage"]
+                }
+            }
+        });
+        const jsonResponse = JSON.parse(response.text);
+        return jsonResponse as Recipe;
+    } catch (error) {
+        console.error("Error analyzing user recipe:", error);
+        throw new Error(`Error analyzing user recipe:\n${getErrorMessage(error)}`);
     }
 };

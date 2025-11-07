@@ -2,7 +2,7 @@
 import React, { useState, useContext, useRef, useEffect, useCallback } from 'react';
 import { Send, LoaderCircle, Camera, ArrowUp } from 'lucide-react';
 import { AppContext } from '../../contexts/AppContext';
-import { processShoppingList, enrichFoodItemsBatch, generateRecipes, processReceiptImage } from '../../services/geminiService';
+import { processShoppingList, enrichFoodItemsBatch, generateConversationalRecipes, processReceiptImage } from '../../services/geminiService';
 import type { PantryItem, AnalysisState, VerifiedItem } from '../../types';
 import RecipeCard from './RecipeCard';
 import AnalysisProgressCard from './AnalysisProgressCard';
@@ -43,7 +43,8 @@ const ProfessorNutriChat: React.FC = () => {
     if (!context) return null;
     const { 
         pantry, addItemsToPantry, addMessageToChat, chatHistory, 
-        clearChatQuickReplies, updateMessage, setViewingRecipe
+        clearChatQuickReplies, updateMessage, setViewingRecipe,
+        awardXpForNewItem
     } = context;
     
     const startEnrichmentProcess = useCallback(async (itemsToProcess: {name: string, quantity: number, unit: string, isFood: boolean}[]) => {
@@ -89,7 +90,7 @@ const ProfessorNutriChat: React.FC = () => {
             if (itemIndex === -1) return;
 
             if (enriched) {
-                newPantryItems.push({
+                const newItem: Omit<PantryItem, 'id'> = {
                     name: item.name,
                     quantity: item.quantity, 
                     unit: item.unit, 
@@ -99,9 +100,13 @@ const ProfessorNutriChat: React.FC = () => {
                     riskLevel: enriched.riskLevel,
                     icon: enriched.icon,
                     color: enriched.color,
-                    healthTip: enriched.healthTip,
+                    nutritionalInfo: enriched.nutritionalInfo,
                     tags: enriched.tags,
-                });
+                    tipRead: false,
+                };
+                newPantryItems.push(newItem);
+                // Award XP for each new item
+                awardXpForNewItem(newItem);
                 finalProcessedItems[itemIndex] = { ...finalProcessedItems[itemIndex], status: 'success', novaClassification: enriched.novaClassification, riskLevel: enriched.riskLevel };
             } else {
                 finalProcessedItems[itemIndex] = { ...finalProcessedItems[itemIndex], status: 'error' };
@@ -122,37 +127,47 @@ const ProfessorNutriChat: React.FC = () => {
         setTimeout(() => {
             addMessageToChat({ role: 'model', text: 'Agora que temos ingredientes novos, que tal eu sugerir algumas receitas saudáveis?', quickReplies: ['Sim, por favor!', 'Agora não'] });
         }, 1000);
-    }, [addItemsToPantry, addMessageToChat, updateMessage, context.chatHistory]);
+    }, [addItemsToPantry, addMessageToChat, updateMessage, context.chatHistory, awardXpForNewItem]);
+    
+    const processUserMessage = useCallback(async (message: string) => {
+        if (!message.trim() || isProcessing) return;
 
-
-    const handleGenerateRecipes = async () => {
+        addMessageToChat({ role: 'user', text: message });
         setIsProcessing(true);
-        addMessageToChat({ role: 'model', text: 'Ótima ideia! Deixe-me ver o que posso criar com os ingredientes saudáveis que você tem...' });
-
+        const thinkingMessageId = addMessageToChat({ role: 'model', text: "Analisando..." });
+        
         try {
-            const healthyItems = pantry.filter(item => item.riskLevel === 'Baixo').map(item => item.name);
-            if (healthyItems.length < 2) {
-                addMessageToChat({ role: 'model', text: "Hmm, para criar receitas saborosas, preciso de pelo menos 2 ingredientes de baixo risco na sua despensa. Que tal adicionar mais alguns?" });
-                setIsProcessing(false);
-                return;
+            // First, try to interpret the message as a shopping list
+            const parsedItems = await processShoppingList(message);
+            
+            if (parsedItems.length > 0) {
+               // It's a shopping list, present verification card
+               presentVerificationCard(parsedItems, thinkingMessageId);
+            } else {
+               // Not a shopping list, treat as a conversational message
+               updateMessage(thinkingMessageId, { text: "Pensando em uma resposta..." });
+               
+               const pantryNames = pantry.map(item => item.name);
+               // FIX: Filter out system messages and cast the role to satisfy the function signature.
+               const historyForModel = chatHistory
+                  .filter(m => m.role === 'user' || m.role === 'model')
+                  .map(m => ({ role: m.role as 'user' | 'model', text: m.text }));
+
+               const response = await generateConversationalRecipes(message, pantryNames, historyForModel);
+               
+               updateMessage(thinkingMessageId, { text: response.text, recipes: response.recipes });
             }
-            const newRecipes = await generateRecipes(healthyItems);
-            addMessageToChat({ role: 'model', recipes: newRecipes, text: "Aqui estão algumas sugestões que preparei para você:" });
-        } catch (e) {
-            addMessageToChat({ role: 'model', text: e instanceof Error ? e.message : "Ocorreu um erro desconhecido." });
+        } catch (error) {
+            updateMessage(thinkingMessageId, { text: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
         } finally {
             setIsProcessing(false);
         }
-    };
+    }, [isProcessing, addMessageToChat, updateMessage, pantry, chatHistory]);
 
     const handleQuickReply = (reply: string) => {
         clearChatQuickReplies();
-        addMessageToChat({ role: 'user', text: reply });
-        if (reply.toLowerCase().includes('sim')) {
-            handleGenerateRecipes();
-        } else {
-            addMessageToChat({ role: 'model', text: 'Tudo bem! Se mudar de ideia, é só pedir.' });
-        }
+        // The user's reply is processed as a new conversational message
+        processUserMessage(reply);
     };
     
     const presentVerificationCard = (parsedItems: (Partial<VerifiedItem> & { name: string, quantity: number, unit: string })[], messageId: string) => {
@@ -173,32 +188,9 @@ const ProfessorNutriChat: React.FC = () => {
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userInput.trim() || isProcessing) return;
-
-        const userMessage = userInput;
-        addMessageToChat({ role: 'user', text: userMessage });
+        const message = userInput;
         setUserInput('');
-        setIsProcessing(true);
-        
-        if (userMessage.toLowerCase().includes('receita')) {
-             await handleGenerateRecipes();
-             setIsProcessing(false);
-             return;
-        }
-
-        const parsingMessageId = addMessageToChat({ role: 'model', text: "Analisando sua lista..." });
-        try {
-            const parsedItems = await processShoppingList(userMessage);
-            if (parsedItems.length === 0) {
-              updateMessage(parsingMessageId, { text: 'Não encontrei itens na sua mensagem. Você pode tentar de novo? Ex: "2 maçãs, 1 litro de leite e pão de forma".' });
-            } else {
-               presentVerificationCard(parsedItems, parsingMessageId);
-            }
-        } catch (error) {
-            updateMessage(parsingMessageId, { text: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-        } finally {
-            setIsProcessing(false);
-        }
+        await processUserMessage(message);
     };
 
      const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -324,7 +316,8 @@ const ProfessorNutriChat: React.FC = () => {
                      </div>
                 )}
                 <div ref={chatEndRef} />
-                 <style jsx>{`
+                 {/* FIX: Removed non-standard "jsx" prop from style tag. */}
+                 <style>{`
                     .typing-indicator span {
                         height: 8px;
                         width: 8px;

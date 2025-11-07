@@ -1,19 +1,36 @@
 
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useRef } from 'react';
 import { AppContext } from '../../contexts/AppContext';
-import { X, ArrowLeft, ArrowRight, Play, Pause, RotateCcw, Sparkles, ChefHat, Heart, Baby, Shield, Utensils, ThumbsUp, Meh, Frown } from 'lucide-react';
+import { X, ArrowLeft, ArrowRight, Play, Pause, RotateCcw, Sparkles, ChefHat, Heart, Baby, Shield, Utensils, Camera, Send } from 'lucide-react';
 import type { RecipeStep, MealFeedback } from '../../types';
+import { ACTION_XP_VALUES } from '../../services/gamificationService';
+import StarRating from './StarRating';
+
+const fileToDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+    });
+};
 
 const CookingModeView: React.FC = () => {
     const context = useContext(AppContext);
     if (!context || !context.cookingRecipe) return null;
 
-    const { cookingRecipe: recipe, logMealCompletion, setCookingRecipe, setIsCookingMode } = context;
+    const { cookingRecipe: recipe, logMealCompletion, setCookingRecipe, setIsCookingMode, awardXp } = context;
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
     const [isTimerActive, setIsTimerActive] = useState(false);
-    const [feedbackGiven, setFeedbackGiven] = useState(false);
+    
+    // Feedback state
+    const [rating, setRating] = useState(0);
+    const [comment, setComment] = useState('');
+    const [photo, setPhoto] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const currentStep: RecipeStep | null = recipe.steps[currentStepIndex];
     const isLastStep = currentStepIndex === recipe.steps.length - 1;
@@ -47,6 +64,7 @@ const CookingModeView: React.FC = () => {
     };
 
     const handleNext = () => {
+        awardXp(ACTION_XP_VALUES.RECIPE_STEP, `Passo ${currentStep?.order} concluído!`);
         setCurrentStepIndex(prev => prev + 1);
     };
 
@@ -66,9 +84,22 @@ const CookingModeView: React.FC = () => {
         }
     };
     
-    const handleFeedback = async (feedback: MealFeedback) => {
-        if (feedbackGiven) return;
-        setFeedbackGiven(true);
+    const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            const imageDataUrl = await fileToDataURL(file);
+            setPhoto(imageDataUrl);
+        }
+    };
+    
+    const handleSubmitFeedback = async () => {
+        if (rating === 0 || isSubmitting) return;
+        setIsSubmitting(true);
+        const feedback: MealFeedback = {
+            rating,
+            text: comment,
+            image: photo,
+        };
         await logMealCompletion(recipe, feedback);
         // The logMealCompletion function will handle closing the view
     };
@@ -134,22 +165,35 @@ const CookingModeView: React.FC = () => {
             </div>
 
             <div className="bg-brand-surface rounded-xl p-4 shadow-edu">
-                <h3 className="font-bold text-base mb-1">A criança comeu bem?</h3>
-                 <p className="text-xs text-brand-text-secondary mb-3">Sua resposta ajuda a personalizar sugestões e atualiza sua despensa!</p>
-                <div className="flex justify-around">
-                     <button onClick={() => handleFeedback('disliked')} disabled={feedbackGiven} className="flex flex-col items-center gap-1.5 text-brand-text-secondary hover:text-red-600 transition-colors disabled:opacity-50">
-                        <div className="p-3 bg-gray-100 rounded-full"><Frown size={24}/></div>
-                        <span className="text-xs font-semibold">Não quis</span>
-                    </button>
-                    <button onClick={() => handleFeedback('ok')} disabled={feedbackGiven} className="flex flex-col items-center gap-1.5 text-brand-text-secondary hover:text-yellow-600 transition-colors disabled:opacity-50">
-                        <div className="p-3 bg-gray-100 rounded-full"><Meh size={24}/></div>
-                        <span className="text-xs font-semibold">Comeu um pouco</span>
-                    </button>
-                    <button onClick={() => handleFeedback('liked')} disabled={feedbackGiven} className="flex flex-col items-center gap-1.5 text-brand-text-secondary hover:text-brand-primary transition-colors disabled:opacity-50">
-                        <div className="p-3 bg-gray-100 rounded-full"><ThumbsUp size={24}/></div>
-                        <span className="text-xs font-semibold">Aprovou!</span>
-                    </button>
-                </div>
+                <h3 className="font-bold text-base mb-2">O que acharam da receita?</h3>
+                 <p className="text-xs text-brand-text-secondary mb-3">Sua avaliação vira um comentário no post original!</p>
+                
+                <StarRating rating={rating} setRating={setRating} size={36} className="justify-center mb-4"/>
+
+                <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Deixe um comentário (opcional)..."
+                    rows={3}
+                    className="w-full bg-brand-background border border-brand-border rounded-lg p-2.5 text-sm"
+                />
+
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold py-2 px-3 rounded-lg border-2 border-dashed border-brand-border hover:bg-gray-50 transition-colors"
+                >
+                   {photo ? <span className="text-green-600">Foto Adicionada!</span> : <><Camera size={16} /> Adicionar Foto (opcional)</>}
+                </button>
+                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+
+                 <button
+                    onClick={handleSubmitFeedback}
+                    disabled={rating === 0 || isSubmitting}
+                    className="w-full mt-4 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center text-base shadow-lg transition-colors hover:bg-brand-dark disabled:bg-gray-400"
+                >
+                    <Send className="mr-2" size={18} />
+                    {isSubmitting ? 'Enviando...' : 'Enviar Avaliação'}
+                </button>
             </div>
         </div>
     );

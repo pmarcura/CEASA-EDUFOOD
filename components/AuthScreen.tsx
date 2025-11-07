@@ -55,6 +55,7 @@ const AuthScreen: React.FC = () => {
             case 'auth/user-not-found':
             case 'auth/wrong-password':
             case 'auth/invalid-credential':
+            case 'auth/invalid-login-credentials':
                 return 'E-mail ou senha inválidos.';
             case 'auth/email-already-in-use':
                 return 'Este e-mail já está cadastrado.';

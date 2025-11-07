@@ -1,8 +1,7 @@
-
 import React from 'react';
 import NovaDonutChart from './charts/NovaDonutChart';
 import ImpactSwaps from './charts/ImpactSwaps';
-import BalancedPlateChart from './charts/BalancedPlateChart';
+import WeeklyRecipeQualityChart from './charts/WeeklyRecipeQualityChart';
 import type { Tab } from '../../types';
 
 interface HomeScreenProps {
@@ -13,7 +12,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ setActiveTab }) => {
     return (
         <div className="space-y-6">
             <NovaDonutChart />
-            <BalancedPlateChart />
+            <WeeklyRecipeQualityChart />
             <ImpactSwaps />
         </div>
     );

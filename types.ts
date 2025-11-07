@@ -1,36 +1,71 @@
-
 import type { ElementType } from 'react';
 import type { User } from 'firebase/auth';
+import type { useGamification } from './hooks/useGamification';
 
 export type { User };
 export type NovaClassificationKey = 'in_natura' | 'culinary_ingredients' | 'processed' | 'ultra_processed';
 export type RiskLevel = 'Baixo' | 'Médio' | 'Alto';
 export type Tab = 'home' | 'chat' | 'pantry' | 'progress' | 'feed';
-export type MealFeedback = 'disliked' | 'ok' | 'liked';
+
+export interface MealFeedback {
+  rating: number; // 1-5
+  text?: string;
+  image?: string | null;
+}
 
 // Onboarding Types
 export type CookingResponsibility = 'self' | 'shared' | 'delivery';
 export type PantryManagementHabit = 'organized' | 'tries' | 'chaotic';
 export type FamilyGoal = 'eat_healthier' | 'organize_time' | 'reduce_waste' | 'kids_eat_better' | 'plan_menus';
+export type FoodSelectivityLevel = 'low' | 'medium' | 'high';
 
 export interface Child {
+  id: string;
+  name: string;
   age: number;
+  restrictions: {
+    religious: boolean;
+    psychological: boolean;
+    autism: boolean;
+  };
+  medicalConditions: string;
+  foodSelectivity: FoodSelectivityLevel;
+  dislikedFoods: string;
+}
+
+export interface MissionProgress {
+  id: string;
+  completed: boolean;
+  lastReset: number;
 }
 
 export interface UserProfile {
   onboardingCompleted: boolean;
   cookingResponsibility?: CookingResponsibility;
   cookingFrequency?: number;
-  familyMembers?: number;
+  familyMembers?: number; // Will be deprecated in favor of adultsCount + children.length
   children?: Child[];
-  dietaryRestrictions?: string[];
+  dietaryRestrictions?: string[]; // General family restrictions
   goals?: FamilyGoal[];
   pantryHabit?: PantryManagementHabit;
+  // Gamification fields
+  xp: number;
+  level: number;
+  goldenCarrots: number;
+  dailyMission: MissionProgress;
+  weeklyMission: MissionProgress;
 }
+
 export interface UserDocument extends UserProfile {
     // This could be expanded later with other top-level user data
 }
 
+export interface NutritionalInfo {
+    origin: string;
+    benefits: string[];
+    risks: string[];
+    nutritionFacts: string;
+}
 
 export interface PantryItem {
   id: string;
@@ -43,8 +78,9 @@ export interface PantryItem {
   riskLevel: RiskLevel;
   icon: string;
   color: string;
-  healthTip: string;
+  nutritionalInfo: NutritionalInfo;
   tags: string[];
+  tipRead?: boolean;
 }
 export interface RecipeIngredient {
   name: string;
@@ -87,12 +123,20 @@ export interface MealLogEntry {
     id: string;
     recipeTitle: string;
     timestamp: number;
-    feedback: MealFeedback;
+    feedbackRating: number;
+    feedbackText?: string;
+    feedbackImage?: string | null;
     serves: string;
     foodGroupPortions?: {
         proteins: number;
         grains: number;
         vegetables: number;
+    };
+    novaBreakdown?: {
+        in_natura: number;
+        culinary_ingredients: number;
+        processed: number;
+        ultra_processed: number;
     };
 }
 
@@ -139,6 +183,8 @@ export interface Mission {
   title: string;
   description: string;
   goal: number;
+  type: 'daily' | 'weekly';
+  reward: number;
   getCurrentProgress: (context: AppContextType) => number;
 }
 
@@ -150,23 +196,49 @@ export interface Achievement {
     isUnlocked: (context: AppContextType) => boolean;
 }
 
+export interface Comment {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  authorAvatar: string;
+  text: string;
+  rating: number; // 1 to 5
+  image?: string | null;
+  timestamp: number;
+}
+
+
 export interface FeedPost {
   id: string;
   authorName: string;
   authorAvatar: string;
-  image: string;
+  image: string; // Can be a URL or base64 data URL
   caption: string;
-  reactions: {
-    inspiring: number;
-    colorful: number;
-    creative: number;
-  };
+  likes: number;
+  likedBy: string[]; // Array of user UIDs who liked the post
+  timestamp: number;
   recipe?: Recipe;
+  comments?: Comment[];
 }
 
-export interface AppContextType {
+export interface XpNoticeInfo {
+  id: number;
+  xpGained: number;
+  reason: string;
+  oldXp: number;
+  newXp: number;
+}
+
+export interface Swap {
+    before: string;
+    after: string;
+    benefit: string;
+}
+
+type GamificationContextType = ReturnType<typeof useGamification>;
+
+export interface AppContextType extends GamificationContextType {
   user: User | null;
-  userProfile: UserProfile | null;
   logout: () => void;
   pantry: PantryItem[];
   addItemsToPantry: (items: Omit<PantryItem, 'id'>[]) => Promise<void>;
@@ -181,7 +253,8 @@ export interface AppContextType {
   updateMessage: (messageId: string, messageUpdate: Partial<ChatMessage>) => void;
   clearChatQuickReplies: () => void;
   feedPosts: FeedPost[];
-  addPostToFeed: (post: Omit<FeedPost, 'id' | 'reactions'>) => void;
+  addPostToFeed: (post: Omit<FeedPost, 'id' | 'likes' | 'likedBy' | 'timestamp' | 'authorName' | 'authorAvatar'>) => void;
+  handleLikePost: (postId: string) => void;
   viewingRecipe: Recipe | null;
   setViewingRecipe: (recipe: Recipe | null) => void;
   isCookingMode: boolean;
@@ -190,4 +263,6 @@ export interface AppContextType {
   setCookingRecipe: (recipe: Recipe | null) => void;
   mealLog: MealLogEntry[];
   logMealCompletion: (recipe: Recipe, feedback: MealFeedback) => Promise<void>;
+  swaps: Swap[];
+  isSwapsLoading: boolean;
 }
