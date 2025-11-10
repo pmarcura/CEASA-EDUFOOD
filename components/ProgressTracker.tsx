@@ -1,14 +1,64 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { ALL_MISSIONS, ACHIEVEMENTS } from '../constants/missions';
-import { Target, Medal, Check, Carrot } from 'lucide-react';
+import { Target, Medal, Check, Carrot, Trophy, Clock } from 'lucide-react';
+import LeaderboardModal from './modals/LeaderboardModal';
+
+const formatTimeLeft = (ms: number) => {
+    if (ms <= 0) return 'Esgotado';
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+};
+
 
 const MissionCard: React.FC<{ type: 'daily' | 'weekly' }> = ({ type }) => {
     const context = useContext(AppContext);
+    const [timeLeft, setTimeLeft] = useState('');
+
     if (!context || !context.userProfile) return null;
 
     const missionProgress = type === 'daily' ? context.userProfile.dailyMission : context.userProfile.weeklyMission;
     const missionDef = ALL_MISSIONS.find(m => m.id === missionProgress.id);
+
+    useEffect(() => {
+        if (!missionDef) return;
+
+        const calculateTimeLeft = () => {
+            const now = new Date();
+            let endDate: Date;
+
+            if (missionDef.type === 'daily') {
+                endDate = new Date();
+                endDate.setHours(23, 59, 59, 999);
+            } else { // weekly
+                endDate = new Date();
+                const dayOfWeek = endDate.getDay(); // Sunday = 0, Saturday = 6
+                // Week ends on Saturday night
+                const daysUntilSaturday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+                endDate.setDate(endDate.getDate() + daysUntilSaturday);
+                endDate.setHours(23, 59, 59, 999);
+            }
+
+            const diff = endDate.getTime() - now.getTime();
+            setTimeLeft(formatTimeLeft(diff));
+        };
+
+        calculateTimeLeft();
+        const interval = setInterval(calculateTimeLeft, 1000);
+
+        return () => clearInterval(interval);
+    }, [missionDef]);
+
 
     if (!missionDef) return <p>Carregando missão...</p>;
 
@@ -30,30 +80,47 @@ const MissionCard: React.FC<{ type: 'daily' | 'weekly' }> = ({ type }) => {
                     <p className="font-bold text-brand-text">{missionDef.title}</p>
                     <p className="text-sm text-brand-text-secondary">{missionDef.description}</p>
                 </div>
-                <div className="text-right flex-shrink-0 ml-2">
-                    <p className="text-sm font-bold text-brand-text-secondary">{progress} / {missionDef.goal}</p>
+                <div className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0 ml-2 ${isCompleted ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-brand-text-secondary'}`}>
+                    {isCompleted ? (
+                        <>
+                            <Check size={14} />
+                            <span>Concluída</span>
+                        </>
+                    ) : (
+                        <>
+                            <Clock size={14} />
+                            <span>{timeLeft}</span>
+                        </>
+                    )}
                 </div>
             </div>
             
-            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden my-3">
+            <div className="text-right mt-2">
+                <p className="text-sm font-bold text-brand-text-secondary">{Math.min(progress, missionDef.goal)} / {missionDef.goal}</p>
+            </div>
+
+            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden my-1.5">
                 <div className={`h-full rounded-full transition-all duration-500 ${percentage >= 100 ? 'bg-green-500' : 'bg-brand-primary'}`} style={{ width: `${percentage}%` }} />
             </div>
 
-            {isCompleted ? (
-                <button disabled className="w-full flex items-center justify-center gap-2 bg-gray-300 text-gray-500 font-bold py-2 px-4 rounded-lg cursor-not-allowed">
-                    <Check size={16}/> Recompensa Coletada
-                </button>
-            ) : (
-                <button onClick={handleClaim} disabled={!canClaim} className="w-full flex items-center justify-center gap-2 bg-brand-primary text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-400 transition-colors hover:bg-brand-dark">
-                    <Carrot size={16}/> Coletar {missionDef.reward} Cenouras
-                </button>
-            )}
+            <div className="mt-3">
+                 {isCompleted ? (
+                    <button disabled className="w-full flex items-center justify-center gap-2 bg-gray-300 text-gray-500 font-bold py-2 px-4 rounded-lg cursor-not-allowed">
+                        <Check size={16}/> Recompensa Coletada
+                    </button>
+                ) : (
+                    <button onClick={handleClaim} disabled={!canClaim} className="w-full flex items-center justify-center gap-2 bg-brand-primary text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-400 transition-colors hover:bg-brand-dark">
+                        <Carrot size={16}/> Coletar {missionDef.reward} Cenouras
+                    </button>
+                )}
+            </div>
         </div>
     );
 };
 
 const ProgressTracker: React.FC = () => {
     const context = useContext(AppContext);
+    const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
 
     if (!context) return null;
 
@@ -79,7 +146,16 @@ const ProgressTracker: React.FC = () => {
             </div>
 
             <div>
-                <h3 className="text-xl font-semibold text-brand-text mb-3 flex items-center"><Medal className="mr-3 text-brand-primary"/> Conquistas</h3>
+                 <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xl font-semibold text-brand-text flex items-center"><Medal className="mr-3 text-brand-primary"/> Conquistas</h3>
+                    <button 
+                        onClick={() => setIsLeaderboardOpen(true)}
+                        className="flex items-center gap-1.5 bg-yellow-400 text-yellow-900 font-bold py-1.5 px-3 rounded-full text-sm hover:opacity-90 transition-opacity"
+                    >
+                        <Trophy size={14} />
+                        Leaderboard
+                    </button>
+                </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
                     {ACHIEVEMENTS.map(ach => {
                         const unlocked = ach.isUnlocked(context);
@@ -102,6 +178,7 @@ const ProgressTracker: React.FC = () => {
                     })}
                 </div>
             </div>
+             {isLeaderboardOpen && <LeaderboardModal onClose={() => setIsLeaderboardOpen(false)} />}
         </div>
     );
 };

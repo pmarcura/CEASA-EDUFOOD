@@ -2,7 +2,7 @@
 import React, { useContext, useState, useCallback } from 'react';
 import type { PantryItem, RiskLevel } from '../types';
 import { AppContext } from '../contexts/AppContext';
-import { AlertTriangle, Lightbulb, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Lightbulb, ChevronDown, CheckCircle2, Carrot, Sandwich, Cookie } from 'lucide-react';
 import DynamicIcon from './DynamicIcon';
 import { NOVA_CLASSIFICATION } from '../constants/foodClassifications';
 import HealthTipModal from './gamification/HealthTipModal';
@@ -13,6 +13,13 @@ interface PantryItemCardProps {
     isSelected: boolean;
     onToggleSelection: (id: string) => void;
 }
+
+const novaIconMap: { [key in PantryItem['novaClassification']]: React.ElementType } = {
+    'in_natura': Carrot,
+    'culinary_ingredients': Carrot,
+    'processed': Sandwich,
+    'ultra_processed': Cookie,
+};
 
 const PantryItemCard: React.FC<PantryItemCardProps> = ({ item, isSelectionMode, isSelected, onToggleSelection }) => {
     const context = useContext(AppContext);
@@ -26,7 +33,7 @@ const PantryItemCard: React.FC<PantryItemCardProps> = ({ item, isSelectionMode, 
     
     const novaInfo = NOVA_CLASSIFICATION[item.novaClassification];
     const currentRiskStyle = riskStyles[item.riskLevel];
-    const hasAgeWarning = item.ageWarningTag && item.ageWarningTag.length > 0;
+    const NovaIcon = novaIconMap[item.novaClassification];
 
     const handleClick = () => {
         if (isSelectionMode) {
@@ -67,21 +74,12 @@ const PantryItemCard: React.FC<PantryItemCardProps> = ({ item, isSelectionMode, 
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs mb-3">
-                        <div className="group relative">
-                            <p><strong>NOVA:</strong> <span className={`font-semibold capitalize px-1.5 py-0.5 rounded-md text-xs ${novaInfo.color}`}>{novaInfo.label}</span></p>
-                            <div className="absolute bottom-full mb-2 w-56 bg-brand-text text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
-                                {novaInfo.description}
-                                <svg className="absolute text-brand-text h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
-                            </div>
-                        </div>
-                        <p><strong>Risco:</strong> <span className={`font-semibold ${currentRiskStyle.text}`}>{item.riskLevel}</span></p>
-                        {hasAgeWarning && (
-                             <div className="flex items-center gap-1 text-yellow-800 font-semibold">
-                                <AlertTriangle size={14}/>
-                                <span>{item.ageWarningTag}</span>
-                            </div>
-                        )}
+                    <div className="flex items-center gap-2 text-xs mb-3">
+                       <div className={`flex items-center gap-1 font-semibold capitalize px-1.5 py-0.5 rounded-md ${novaInfo.color}`}>
+                           <NovaIcon size={12} />
+                           <span>{novaInfo.simpleLabel}</span>
+                       </div>
+                       <span className={`font-semibold ${currentRiskStyle.text}`}>{item.riskLevel}</span>
                     </div>
                 </div>
 

@@ -3,11 +3,26 @@ import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { AppContext } from '../../contexts/AppContext';
 import PantryItemCard from './PantryItemCard';
 import PantryListItem from './PantryListItem';
-import { Search, LayoutGrid, List, Trash2, Filter } from 'lucide-react';
+import { Search, LayoutGrid, List, Trash2, Filter, PlusCircle, MinusCircle, Carrot, Sandwich, Cookie, Sparkles } from 'lucide-react';
 import type { NovaClassificationKey, PantryItem } from '../../types';
 import { enrichFoodItemsBatch } from '../../services/geminiService';
 import { ACTION_XP_VALUES } from '../../services/gamificationService';
 import PantryFilterModal from './modals/PantryFilterModal';
+import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
+
+const novaFilters: {
+    key: NovaClassificationKey | 'all';
+    label: string;
+    icon: React.ElementType;
+    description?: string;
+    colorClass: string;
+}[] = [
+    { key: 'all', label: 'Todos', icon: Sparkles, colorClass: 'text-brand-text-secondary' },
+    { key: 'in_natura', label: 'In Natura', icon: Carrot, description: NOVA_CLASSIFICATION.in_natura.description, colorClass: 'text-green-600' },
+    { key: 'processed', label: 'Processado', icon: Sandwich, description: NOVA_CLASSIFICATION.processed.description, colorClass: 'text-yellow-600' },
+    { key: 'ultra_processed', label: 'Ultraproc.', icon: Cookie, description: NOVA_CLASSIFICATION.ultra_processed.description, colorClass: 'text-red-600' },
+];
+
 
 const PantryDisplay: React.FC = () => {
     const context = useContext(AppContext);
@@ -18,10 +33,12 @@ const PantryDisplay: React.FC = () => {
     const [selectedCodex, setSelectedCodex] = useState<string>('all');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+    const [isNovaInfoExpanded, setIsNovaInfoExpanded] = useState(false);
     
     // Interaction States
     const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+    // FIX: Correctly initialize state with useState and a Set.
+    const [selectedItems, setSelectedItems] = useState(new Set<string>());
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -36,11 +53,15 @@ const PantryDisplay: React.FC = () => {
     const filteredPantry = useMemo(() => {
         return pantry.filter(item => {
             const nameMatch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const novaMatch = selectedNova === 'all' || item.novaClassification === selectedNova;
+            const novaMatch = selectedNova === 'all' || item.novaClassification === selectedNova || (selectedNova === 'in_natura' && item.novaClassification === 'culinary_ingredients');
             const codexMatch = selectedCodex === 'all' || item.codexCategory === selectedCodex;
             return nameMatch && novaMatch && codexMatch;
         });
     }, [pantry, searchTerm, selectedNova, selectedCodex]);
+
+    const handleNovaFilterClick = (key: NovaClassificationKey | 'all') => {
+        setSelectedNova(prev => (prev === key ? 'all' : key));
+    };
 
     const handleToggleSelection = useCallback((itemId: string) => {
         setSelectedItems(prev => {
@@ -155,14 +176,45 @@ const PantryDisplay: React.FC = () => {
         <div className="pb-24">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-brand-text">Despensa</h2>
-                <div className="flex items-center gap-2">
-                    <button onClick={handleToggleSelectionMode} className="text-sm font-semibold text-brand-primary">
-                        {isSelectionMode ? 'Cancelar' : 'Selecionar'}
-                    </button>
-                    <div className="flex items-center gap-1 bg-brand-surface p-1 rounded-full border border-brand-border shadow-sm">
-                        <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-primary/10'}`} aria-label="Visualização em Grade"><LayoutGrid size={18} /></button>
-                        <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-full transition-colors ${viewMode === 'list' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-primary/10'}`} aria-label="Visualização em Lista"><List size={18} /></button>
+                 <button onClick={handleToggleSelectionMode} className="text-sm font-semibold text-brand-primary">
+                    {isSelectionMode ? 'Cancelar' : 'Selecionar'}
+                </button>
+            </div>
+            
+            <div className="bg-brand-surface rounded-xl shadow-edu p-3 mb-4">
+                <button 
+                    onClick={() => setIsNovaInfoExpanded(!isNovaInfoExpanded)}
+                    className="w-full flex justify-between items-center"
+                    aria-expanded={isNovaInfoExpanded}
+                >
+                    <h3 className="text-base font-bold text-brand-text">Classificação NOVA</h3>
+                    {isNovaInfoExpanded ? <MinusCircle size={20} className="text-brand-text-secondary"/> : <PlusCircle size={20} className="text-brand-primary"/>}
+                </button>
+                
+                 {isNovaInfoExpanded && (
+                    <div className="mt-3 pt-3 border-t border-brand-border space-y-3 animate-fade-in">
+                        {novaFilters.filter(f => f.key !== 'all').map(filter => (
+                            <div key={filter.key} className="flex items-start gap-3">
+                                <filter.icon size={24} className={`flex-shrink-0 mt-1 ${filter.colorClass}`} />
+                                <div>
+                                    <p className={`font-bold text-sm ${filter.colorClass}`}>{NOVA_CLASSIFICATION[filter.key as NovaClassificationKey].label}</p>
+                                    <p className="text-xs text-brand-text-secondary">{filter.description}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
+                )}
+
+                <div className={`grid grid-cols-4 gap-2 ${isNovaInfoExpanded ? 'mt-3 pt-3 border-t border-brand-border' : 'mt-2'}`}>
+                    {novaFilters.map(filter => (
+                        <button key={filter.key} onClick={() => handleNovaFilterClick(filter.key)}
+                         className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all ${selectedNova === filter.key ? 'bg-brand-primary/10 shadow-inner' : 'hover:bg-gray-100'}`}
+                         aria-pressed={selectedNova === filter.key}
+                        >
+                            <filter.icon size={22} className={selectedNova === filter.key ? 'text-brand-primary' : filter.colorClass} />
+                            <span className={`text-xs font-semibold mt-1 ${selectedNova === filter.key ? 'text-brand-primary' : 'text-brand-text-secondary'}`}>{filter.label}</span>
+                        </button>
+                    ))}
                 </div>
             </div>
             
@@ -189,6 +241,10 @@ const PantryDisplay: React.FC = () => {
                         </span>
                     )}
                 </button>
+                 <div className="flex items-center gap-1 bg-brand-surface p-1 rounded-full border border-brand-border shadow-sm">
+                    <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-primary/10'}`} aria-label="Visualização em Grade"><LayoutGrid size={18} /></button>
+                    <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-full transition-colors ${viewMode === 'list' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-primary/10'}`} aria-label="Visualização em Lista"><List size={18} /></button>
+                </div>
             </div>
             
             {filteredPantry.length > 0 ? (

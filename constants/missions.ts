@@ -2,21 +2,36 @@ import type { Mission, Achievement, AppContextType } from '../types';
 import { Leaf, CookingPot, HeartHandshake, BookOpen, Star, Camera, CheckSquare, Sun, Calendar } from 'lucide-react';
 import { MISSION_REWARDS } from '../services/gamificationService';
 
+// Helper to get the start of the current day
+const getStartOfToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.getTime();
+};
+
+// Helper to get the start of the current week (Sunday)
+const getStartOfWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // Sunday = 0
+    const diff = now.getDate() - dayOfWeek;
+    const startOfWeek = new Date(now.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+    return startOfWeek.getTime();
+};
+
+
 export const DAILY_MISSIONS: Mission[] = [
     {
-        id: 'add-in-natura-2',
-        title: 'Natureza no Prato',
-        description: 'Adicione 2 itens "In Natura" à despensa.',
-        goal: 2,
+        id: 'log-meal-1',
+        title: 'Diário de Bordo',
+        description: 'Registre 1 refeição feita hoje.',
+        goal: 1,
         type: 'daily',
         reward: MISSION_REWARDS.DAILY,
         getCurrentProgress: (context: AppContextType) => {
-             const startOfToday = new Date();
-             startOfToday.setHours(0, 0, 0, 0);
-             // This is a proxy. A real implementation would track additions by day.
-             // For now, we'll count how many in natura items exist.
-             return context.pantry.filter(i => i.novaClassification === 'in_natura').length;
-        },
+             const startOfToday = getStartOfToday();
+             return context.mealLog.filter(log => log.timestamp >= startOfToday).length;
+        }
     },
     {
         id: 'read-tip-1',
@@ -26,20 +41,10 @@ export const DAILY_MISSIONS: Mission[] = [
         type: 'daily',
         reward: MISSION_REWARDS.DAILY,
         getCurrentProgress: (context: AppContextType) => {
+            // NOTE: This can't be truly "daily" without a schema change (timestamp on tipRead).
+            // It counts total read tips within the mission's active day.
+            // A user can complete this once per day by reading a new tip.
             return context.pantry.filter(i => i.tipRead).length;
-        }
-    },
-    {
-        id: 'log-meal-1',
-        title: 'Diário de Bordo',
-        description: 'Registre 1 refeição feita hoje.',
-        goal: 1,
-        type: 'daily',
-        reward: MISSION_REWARDS.DAILY,
-        getCurrentProgress: (context: AppContextType) => {
-             const startOfToday = new Date();
-             startOfToday.setHours(0, 0, 0, 0);
-             return context.mealLog.filter(log => log.timestamp >= startOfToday.getTime()).length;
         }
     },
 ];
@@ -48,29 +53,48 @@ export const WEEKLY_MISSIONS: Mission[] = [
     {
         id: 'cook-recipes-3',
         title: 'Chef da Semana',
-        description: 'Cozinhe 3 receitas diferentes.',
+        description: 'Cozinhe 3 receitas diferentes nesta semana.',
         goal: 3,
         type: 'weekly',
         reward: MISSION_REWARDS.WEEKLY,
         getCurrentProgress: (context: AppContextType) => {
-             const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-             const recentLogs = context.mealLog.filter(log => log.timestamp >= oneWeekAgo);
-             return new Set(recentLogs.map(log => log.recipeTitle)).size;
+             const startOfWeek = getStartOfWeek();
+             const recentLogs = context.mealLog.filter(log => log.timestamp >= startOfWeek);
+             const uniqueRecipes = new Set(recentLogs.map(log => log.recipeTitle));
+             return uniqueRecipes.size;
         },
     },
     {
-        id: 'healthy-pantry-75',
-        title: 'Despensa de Elite',
-        description: 'Alcance 75% de "Comida de Verdade" na despensa.',
-        goal: 75,
+        id: 'healthy-routine-3',
+        title: 'Rotina Saudável',
+        description: 'Registre refeições em 3 dias diferentes da semana.',
+        goal: 3,
         type: 'weekly',
         reward: MISSION_REWARDS.WEEKLY,
         getCurrentProgress: (context: AppContextType) => {
-            if (context.pantry.length === 0) return 0;
-            const healthyCount = context.pantry.filter(i => i.novaClassification === 'in_natura' || i.novaClassification === 'culinary_ingredients').length;
-            return Math.round((healthyCount / context.pantry.length) * 100);
+            const startOfWeek = getStartOfWeek();
+            const recentLogs = context.mealLog.filter(log => log.timestamp >= startOfWeek);
+            const uniqueDays = new Set(
+                recentLogs.map(log => new Date(log.timestamp).toDateString())
+            );
+            return uniqueDays.size;
         },
     },
+    {
+        id: 'clean-week-1',
+        title: 'Semana Limpa',
+        description: 'Cozinhe 1 receita sem ingredientes ultraprocessados.',
+        goal: 1,
+        type: 'weekly',
+        reward: MISSION_REWARDS.WEEKLY,
+        getCurrentProgress: (context: AppContextType) => {
+            const startOfWeek = getStartOfWeek();
+            return context.mealLog.filter(log =>
+                log.timestamp >= startOfWeek &&
+                log.novaBreakdown?.ultra_processed === 0
+            ).length;
+        }
+    }
 ];
 
 export const ALL_MISSIONS = [...DAILY_MISSIONS, ...WEEKLY_MISSIONS];

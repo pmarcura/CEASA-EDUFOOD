@@ -235,6 +235,14 @@ export interface Swap {
     benefit: string;
 }
 
+export interface LeaderboardEntry {
+    uid: string;
+    name: string;
+    avatar: string;
+    xp: number;
+}
+
+
 type GamificationContextType = ReturnType<typeof useGamification>;
 
 export interface AppContextType extends GamificationContextType {

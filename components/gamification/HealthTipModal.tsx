@@ -1,20 +1,23 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import type { PantryItem } from '../../types';
-import { X, Globe, ThumbsUp, AlertTriangle, ClipboardList, BadgeCheck, Info } from 'lucide-react';
+import { X, Globe, ThumbsUp, AlertTriangle, ClipboardList, BadgeCheck, Info, Sparkles, LoaderCircle } from 'lucide-react';
+import { generateFoodStory } from '../../services/geminiService';
 
 interface HealthTipModalProps {
   item: PantryItem;
   onClose: () => void;
 }
 
-const InfoSection: React.FC<{ icon: React.ElementType, title: string, colorClass: string, children: React.ReactNode }> = ({ icon: Icon, title, colorClass, children }) => (
-    <div>
-        <div className="flex items-center gap-2 mb-2">
-            <Icon size={18} className={colorClass} />
+const InfoCard: React.FC<{ icon: React.ElementType, title: string, colorClass: string, children: React.ReactNode }> = ({ icon: Icon, title, colorClass, children }) => (
+    <div className="bg-brand-background p-3 rounded-xl border border-brand-border">
+        <div className="flex items-center gap-2.5 mb-2">
+            <div className={`p-1.5 rounded-full ${colorClass.replace('text-', 'bg-')}/10`}>
+              <Icon size={18} className={colorClass} />
+            </div>
             <h4 className={`font-bold text-base ${colorClass}`}>{title}</h4>
         </div>
-        <div className="pl-7 text-brand-text-secondary text-sm space-y-1">
+        <div className="pl-3 text-brand-text-secondary text-sm space-y-1">
             {children}
         </div>
     </div>
@@ -22,6 +25,28 @@ const InfoSection: React.FC<{ icon: React.ElementType, title: string, colorClass
 
 const HealthTipModal: React.FC<HealthTipModalProps> = ({ item, onClose }) => {
   const { nutritionalInfo } = item;
+  const [story, setStory] = useState<string | null>(null);
+  const [isLoadingStory, setIsLoadingStory] = useState(true);
+
+  useEffect(() => {
+    if (item.nutritionalInfo) {
+      const fetchStory = async () => {
+        setIsLoadingStory(true);
+        try {
+          const generatedStory = await generateFoodStory(item);
+          setStory(generatedStory);
+        } catch (e) {
+          console.error("Failed to generate story", e);
+          setStory("Não foi possível carregar a história no momento. Tente novamente mais tarde.");
+        } finally {
+          setIsLoadingStory(false);
+        }
+      };
+      fetchStory();
+    } else {
+      setIsLoadingStory(false);
+    }
+  }, [item]);
   
   const modalRoot = document.getElementById('modal-root');
   if (!modalRoot) return null;
@@ -42,7 +67,7 @@ const HealthTipModal: React.FC<HealthTipModalProps> = ({ item, onClose }) => {
                 </div>
             </header>
             
-            <main className="flex-1 overflow-y-auto p-4">
+            <main className="flex-1 overflow-y-auto p-4 space-y-4">
                {!nutritionalInfo ? (
                     <div className="text-center p-6 flex flex-col items-center justify-center h-full">
                         <Info size={40} className="text-brand-primary mx-auto mb-4" />
@@ -52,32 +77,46 @@ const HealthTipModal: React.FC<HealthTipModalProps> = ({ item, onClose }) => {
                         </p>
                     </div>
                 ) : (
-                    <div className="space-y-5">
-                        {nutritionalInfo.origin && (
-                            <InfoSection icon={Globe} title="Origem" colorClass="text-blue-500">
-                                <p>{nutritionalInfo.origin}</p>
-                            </InfoSection>
-                        )}
-                         {nutritionalInfo.benefits && nutritionalInfo.benefits.length > 0 && (
-                            <InfoSection icon={ThumbsUp} title="Por que faz bem?" colorClass="text-brand-primary">
-                                <ul className="list-disc list-inside">
-                                    {nutritionalInfo.benefits.map((benefit, i) => <li key={i}>{benefit}</li>)}
-                                </ul>
-                            </InfoSection>
-                        )}
-                         {nutritionalInfo.risks && nutritionalInfo.risks.length > 0 && (
-                            <InfoSection icon={AlertTriangle} title="Pontos de Atenção" colorClass="text-brand-risk-medium">
-                                <ul className="list-disc list-inside">
-                                    {nutritionalInfo.risks.map((risk, i) => <li key={i}>{risk}</li>)}
-                                </ul>
-                            </InfoSection>
-                        )}
-                         {nutritionalInfo.nutritionFacts && (
-                            <InfoSection icon={ClipboardList} title="Resumo Nutricional" colorClass="text-purple-500">
-                                <p>{nutritionalInfo.nutritionFacts}</p>
-                            </InfoSection>
-                        )}
-                    </div>
+                    <>
+                      <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
+                          <div className="flex items-center gap-2 mb-2">
+                              <Sparkles size={18} className="text-blue-600" />
+                              <h4 className="font-bold text-base text-blue-800">Conte para a Criança</h4>
+                          </div>
+                          {isLoadingStory ? (
+                             <div className="flex items-center justify-center py-4">
+                               <LoaderCircle size={24} className="animate-spin text-blue-600" />
+                             </div>
+                          ) : (
+                             <p className="text-sm text-blue-900 leading-relaxed">{story}</p>
+                          )}
+                      </div>
+
+                      {nutritionalInfo.benefits && nutritionalInfo.benefits.length > 0 && (
+                          <InfoCard icon={ThumbsUp} title="Por que faz bem?" colorClass="text-brand-primary">
+                              <ul className="list-disc list-inside">
+                                  {nutritionalInfo.benefits.map((benefit, i) => <li key={i}>{benefit}</li>)}
+                              </ul>
+                          </InfoCard>
+                      )}
+                       {nutritionalInfo.risks && nutritionalInfo.risks.length > 0 && (
+                          <InfoCard icon={AlertTriangle} title="Pontos de Atenção" colorClass="text-brand-risk-medium">
+                              <ul className="list-disc list-inside">
+                                  {nutritionalInfo.risks.map((risk, i) => <li key={i}>{risk}</li>)}
+                              </ul>
+                          </InfoCard>
+                      )}
+                       {nutritionalInfo.origin && (
+                          <InfoCard icon={Globe} title="Origem" colorClass="text-indigo-500">
+                              <p>{nutritionalInfo.origin}</p>
+                          </InfoCard>
+                      )}
+                       {nutritionalInfo.nutritionFacts && (
+                          <InfoCard icon={ClipboardList} title="Resumo Nutricional" colorClass="text-purple-500">
+                              <p>{nutritionalInfo.nutritionFacts}</p>
+                          </InfoCard>
+                      )}
+                    </>
                 )}
             </main>
             

@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Recipe, NovaClassificationKey, RiskLevel, NutritionalInfo, ChatMessage } from '../types';
-import { CODEX_CATEGORIES } from "../constants/foodClassifications";
+import type { Recipe, NovaClassificationKey, RiskLevel, NutritionalInfo, ChatMessage, PantryItem } from '../types';
+import { CODEX_CATEGORIES, NOVA_CLASSIFICATION } from "../constants/foodClassifications";
 
 // Assume API_KEY is set in the environment
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -349,6 +349,43 @@ export const generateSwaps = async (itemNames: string[]): Promise<{ before: stri
     } catch (error) {
         console.error("Error generating swaps:", error);
         throw new Error(`Error generating swaps:\n${getErrorMessage(error)}`);
+    }
+};
+
+export const generateFoodStory = async (item: PantryItem): Promise<string> => {
+    try {
+        const { name, nutritionalInfo, novaClassification } = item;
+        const response = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: `You are Professor Nutri, an AI that explains nutrition to children in an engaging way, like a school teacher for early elementary grades (ages 6-9).
+A parent wants to explain the food "${name}" to their child.
+Use these facts to create a short, educational explanation (2-3 paragraphs max).
+- Origin: ${nutritionalInfo.origin}
+- Benefits: ${nutritionalInfo.benefits.join(', ')}
+- Risks/Attention Points: ${nutritionalInfo.risks.join(', ')}
+- NOVA Classification: ${NOVA_CLASSIFICATION[novaClassification].label}
+
+Your goal is to be factual but use simple analogies. Avoid fantasy or magical elements like "superpowers".
+- For a healthy food like a carrot, you can explain that it contains "beta-carotene," which our body turns into Vitamin A. Describe Vitamin A as a "super helper" for our eyes, keeping our vision sharp for playing and reading.
+- For an unhealthy food like a cookie, explain that it's a "sometimes food" because it has lots of sugar and fat that give us a super-fast, but short, burst of energy. Mention that it doesn't have many "building blocks" (like vitamins and proteins) that our bodies need to grow strong and have energy for the whole day.
+- Keep the language positive and clear.
+Respond ONLY with a valid JSON object with a single key "story".`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        story: { type: Type.STRING }
+                    },
+                    required: ["story"]
+                },
+            },
+        });
+        const jsonResponse = JSON.parse(response.text);
+        return jsonResponse.story;
+    } catch (error) {
+        console.error("Error generating food story:", error);
+        throw new Error(`Error generating food story:\n${getErrorMessage(error)}`);
     }
 };
 
