@@ -1,6 +1,6 @@
 {
   "name": "EduFood Family",
-  "description": "A smart family nutrition assistant designed to transform how families manage food and plan meals. It features an AI, 'Professor Nutri', to provide visual and practical insights into food choices, turning pantry management into an interactive and educational experience.",
+  "description": "O aliado dos pais na educação nutricional. Planejamento de refeições, gestão de despensa e argumentos lúdicos para transformar a alimentação dos filhos.",
   "requestFramePermissions": [
     "camera"
   ]

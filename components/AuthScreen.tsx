@@ -1,11 +1,6 @@
+
 import React, { useState } from 'react';
 import { auth, provider } from '../firebase/config';
-import { 
-    signInWithEmailAndPassword, 
-    createUserWithEmailAndPassword, 
-    updateProfile,
-    signInWithPopup
-} from 'firebase/auth';
 import { LoaderCircle, Mail, Key, User as UserIcon } from 'lucide-react';
 
 const AuthScreen: React.FC = () => {
@@ -22,11 +17,11 @@ const AuthScreen: React.FC = () => {
         setError('');
         try {
             if (isLogin) {
-                await signInWithEmailAndPassword(auth, email, password);
+                await auth.signInWithEmailAndPassword(email, password);
             } else {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
                 if (userCredential.user) {
-                    await updateProfile(userCredential.user, { displayName: displayName });
+                    await userCredential.user.updateProfile({ displayName: displayName });
                 }
             }
         } catch (err: any) {
@@ -41,7 +36,7 @@ const AuthScreen: React.FC = () => {
         setIsLoading(true);
         setError('');
         try {
-            await signInWithPopup(auth, provider);
+            await auth.signInWithPopup(provider);
         } catch (err: any) {
              console.error("Google Sign-In Error:", err);
              setError(getFriendlyErrorMessage(err.code));

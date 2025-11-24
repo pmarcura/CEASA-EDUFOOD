@@ -1,12 +1,11 @@
 
-import React, { useContext, useState, useEffect } from 'react';
-import type { PantryItem, RiskLevel, NovaClassificationKey } from '../types';
-import { AppContext } from '../../contexts/AppContext';
-import { Edit, Trash2, CheckCircle2, Save, X, LoaderCircle } from 'lucide-react';
-import DynamicIcon from './DynamicIcon';
+import React, { useState, useEffect } from 'react';
+import type { PantryItem } from '../types';
+import { Edit, Trash2, CheckCircle2, Save, LoaderCircle } from 'lucide-react';
+import FoodIcon from './FoodIcon';
 import { NOVA_CLASSIFICATION } from '../constants/foodClassifications';
-import { CODEX_CATEGORIES } from '../constants/foodClassifications';
 import { UNITS } from '../constants/units';
+import { formatQuantity, toTitleCase } from '../utils/formatters';
 
 
 interface PantryListItemProps {
@@ -38,26 +37,29 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
     const [editedItem, setEditedItem] = useState(item);
 
     useEffect(() => {
-        // If the item prop changes from the parent, update the local state.
-        // Also resets form if editing is cancelled externally.
         setEditedItem(item);
     }, [item, isEditing]);
 
     const handleFieldChange = (field: keyof PantryItem, value: string | number) => {
-        // Ensure quantity is always a number
+        // Ensure quantity is cleaned immediately on input for valid float parsing
         const processedValue = field === 'quantity' ? parseFloat(value as string) || 0 : value;
         setEditedItem(prev => ({ ...prev, [field]: processedValue }));
     };
 
     const handleSave = () => {
-        // We only pass the fields that have changed to be more efficient
         const updates: Partial<PantryItem> = {};
-        for (const key in editedItem) {
-            const typedKey = key as keyof PantryItem;
-            if (editedItem[typedKey] !== item[typedKey]) {
-                (updates as any)[typedKey] = editedItem[typedKey];
-            }
+        // Clean quantity before sending
+        const cleanedQuantity = formatQuantity(editedItem.quantity);
+        
+        if (cleanedQuantity !== item.quantity) {
+            updates.quantity = cleanedQuantity;
         }
+        
+        if (editedItem.name !== item.name) {
+            updates.name = toTitleCase(editedItem.name);
+        }
+        if (editedItem.unit !== item.unit) updates.unit = editedItem.unit;
+
         onSaveEdit(item.id, updates);
     };
 
@@ -71,7 +73,14 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
                     </div>
                      <div>
                         <label className="text-xs font-semibold text-brand-text-secondary block mb-1">Quantidade</label>
-                        <input type="number" value={editedItem.quantity} onChange={e => handleFieldChange('quantity', e.target.value)} className="w-full text-sm bg-brand-background border border-brand-border rounded-lg p-2" min="0"/>
+                        <input 
+                            type="number" 
+                            value={editedItem.quantity} 
+                            onChange={e => handleFieldChange('quantity', e.target.value)} 
+                            className="w-full text-sm bg-brand-background border border-brand-border rounded-lg p-2" 
+                            min="0" 
+                            step="0.1"
+                        />
                     </div>
                      <div>
                         <label className="text-xs font-semibold text-brand-text-secondary block mb-1">Unidade</label>
@@ -80,9 +89,6 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
                         </select>
                     </div>
                 </div>
-                 <p className="text-xs text-brand-text-secondary mt-3 text-center bg-gray-50 p-2 rounded-md">
-                    A classificação nutricional será atualizada automaticamente pela IA se o nome do item for alterado.
-                 </p>
                  <div className="flex justify-between items-center mt-4 pt-3 border-t border-brand-border">
                     <button onClick={() => onDeleteItem(item.id)} className="flex items-center gap-1.5 text-sm text-red-500 font-semibold p-2 hover:bg-red-50 rounded-lg disabled:opacity-50" disabled={isSaving}>
                         <Trash2 size={16}/> Excluir
@@ -112,11 +118,10 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
                     </div>
                 )}
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                     <div className={`p-2 rounded-full flex-shrink-0`} style={{ backgroundColor: `${item.color}20` }}>
-                        <DynamicIcon name={item.icon} className="w-5 h-5" style={{ color: item.color }}/>
-                    </div>
+                     <FoodIcon name={item.name} icon={item.icon} size="sm" />
+                    
                     <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-bold text-brand-text capitalize truncate">{item.name}</h3>
+                        <h3 className="text-sm font-bold text-brand-text capitalize truncate">{toTitleCase(item.name)}</h3>
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                              <span className={`font-semibold capitalize px-1.5 py-0.5 rounded-md text-[10px] ${novaInfo.color}`}>{novaInfo.label}</span>
                              <span className="text-[10px] text-brand-text-secondary bg-gray-100 px-1.5 py-0.5 rounded-md">{item.codexCategory}</span>
@@ -125,7 +130,7 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
                 </div>
                 <div className="text-right flex items-center gap-3">
                     <div>
-                        <span className="text-sm font-bold text-brand-text">{item.quantity}</span>
+                        <span className="text-sm font-bold text-brand-text">{formatQuantity(item.quantity)}</span>
                         <span className="text-xs text-brand-text-secondary ml-1">{item.unit}</span>
                     </div>
                     {!isSelectionMode && (

@@ -1,101 +1,141 @@
 
-import React from 'react';
-import { LoaderCircle, CheckCircle2, XCircle, ScanLine } from 'lucide-react';
-import type { AnalysisState, NovaClassificationKey, RiskLevel } from '../../types';
-import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
+import React, { useState, useEffect } from 'react';
+import { LoaderCircle, CheckCircle2, XCircle, Sparkles, Clock, Database } from 'lucide-react';
+import type { AnalysisState } from '../../types';
 
 interface AnalysisProgressCardProps {
     analysis: AnalysisState;
 }
 
-const getStatusIcon = (status: 'pending' | 'success' | 'error' | 'skipped') => {
-    switch (status) {
-        case 'pending':
-            return <LoaderCircle className="h-4 w-4 animate-spin text-brand-text-secondary" />;
-        case 'success':
-            return <CheckCircle2 className="h-4 w-4 text-brand-risk-low" />;
-        case 'error':
-            return <XCircle className="h-4 w-4 text-brand-risk-high" />;
-        case 'skipped':
-            return <XCircle className="h-4 w-4 text-gray-400" />;
-        default:
-            return null;
-    }
-};
+const LOADING_MESSAGES = [
+    "Digitalizando nota fiscal...",
+    "Extraindo texto...",
+    "Identificando produtos...",
+    "Organizando lista..."
+];
 
-const getRiskColor = (riskLevel?: RiskLevel) => {
-    switch (riskLevel) {
-        case 'Baixo': return 'text-brand-risk-low';
-        case 'Médio': return 'text-brand-risk-medium';
-        case 'Alto': return 'text-brand-risk-high';
-        default: return 'text-brand-text-secondary';
-    }
-};
-
-const getNovaClassificationStyle = (classification?: NovaClassificationKey) => {
-    if (!classification || !NOVA_CLASSIFICATION[classification]) {
-        return 'bg-gray-200 text-gray-800';
-    }
-    const colorClass = NOVA_CLASSIFICATION[classification].color;
-    // Replace background color with a more subtle version for the chat bubble
-    return `${colorClass.replace('bg-', 'bg-opacity-50 bg-')} border border-black/5`;
-}
+const ENRICHING_MESSAGES = [
+    "Consultando tabela nutricional...",
+    "Classificando (NOVA)...",
+    "Verificando validade...",
+    "Colorindo despensa..."
+];
 
 const AnalysisProgressCard: React.FC<AnalysisProgressCardProps> = ({ analysis }) => {
-    const { status, progress, totalItems, processedItems } = analysis;
+    const { status, totalItems, progress } = analysis;
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const [messageIndex, setMessageIndex] = useState(0);
 
-    const getTitle = () => {
-        switch (status) {
-            case 'parsing': return 'Analisando sua lista...';
-            case 'enriching': return `Analisando ${processedItems.filter(p => p.status === 'success' || p.status === 'error').length}/${totalItems} itens...`;
-            case 'done': return `Análise Concluída!`;
-            case 'error': return 'Ocorreu um erro na análise.';
-            default: 'Iniciando análise...';
-        }
-    };
-    
+    const isComplete = status === 'done';
+    const isError = status === 'error';
+    const isEnriching = status === 'enriching';
+
+    // Timer logic for elapsed time only
+    useEffect(() => {
+        if (isComplete || isError) return;
+
+        const startTime = Date.now();
+        const timerInterval = setInterval(() => {
+            setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+        }, 1000);
+
+        return () => clearInterval(timerInterval);
+    }, [isComplete, isError]);
+
+    // Message rotation logic
+    useEffect(() => {
+        if (isComplete || isError) return;
+        
+        const messageInterval = setInterval(() => {
+            setMessageIndex(prev => (prev + 1) % (isEnriching ? ENRICHING_MESSAGES.length : LOADING_MESSAGES.length));
+        }, 3000);
+
+        return () => clearInterval(messageInterval);
+    }, [isEnriching, isComplete, isError]);
+
+    const currentMessage = isEnriching 
+        ? ENRICHING_MESSAGES[messageIndex]
+        : LOADING_MESSAGES[messageIndex];
+
+    // Determine the visual progress percentage
+    // If parsing, we fake it slightly up to 90% because we don't know total yet.
+    // If enriching, we use the REAL progress passed from props.
+    const displayProgress = isEnriching ? progress : (status === 'parsing' ? 45 : 0);
+
     if (status === 'idle') return null;
 
     return (
-        <div className="bg-transparent rounded-xl p-1 mt-2 w-full max-w-full sm:max-w-md">
-            <div className="flex items-center mb-2">
-                <ScanLine className="h-5 w-5 text-brand-text/70 mr-2.5 flex-shrink-0" />
-                <div className="w-full overflow-hidden">
-                    <p className="font-semibold text-brand-text truncate text-sm">{getTitle()}</p>
-                     {(status === 'enriching' || status === 'done') && (
-                        <div className="w-full bg-black/10 rounded-full h-1.5 mt-1">
-                            <div className="bg-brand-primary h-1.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {processedItems.length > 0 && (
-                 <div className="space-y-1.5 text-sm max-h-40 overflow-y-auto pr-2">
-                    {processedItems.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-black/5 rounded-lg">
-                            <div className="flex items-center overflow-hidden">
-                                <span className="mr-2 flex-shrink-0">{getStatusIcon(item.status)}</span>
-                                <span className="capitalize text-brand-text truncate text-sm">{item.name}</span>
+        <div className="w-full max-w-sm mx-auto mt-3 animate-fade-in">
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-edu relative overflow-hidden">
+                
+                {/* Header with Icon and Status */}
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-shrink-0">
+                        {isComplete ? (
+                            <div className="bg-green-100 p-2 rounded-full animate-pop">
+                                <CheckCircle2 size={20} className="text-green-600" />
                             </div>
-                            {item.status === 'success' && (
-                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                     <span className={`text-xs font-semibold ${getRiskColor(item.riskLevel)}`}>{item.riskLevel}</span>
-                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${getNovaClassificationStyle(item.novaClassification)} capitalize`}>
-                                        {NOVA_CLASSIFICATION[item.novaClassification!]?.label.split(' ')[0]}
-                                    </span>
-                               </div>
-                            )}
-                             {item.status === 'error' && (
-                                <span className="text-xs font-semibold text-brand-risk-high flex-shrink-0 ml-2">Falha</span>
-                            )}
-                             {item.status === 'skipped' && (
-                                <span className="text-xs font-semibold text-gray-500 flex-shrink-0 ml-2">Não é alimento</span>
+                        ) : isError ? (
+                            <div className="bg-red-100 p-2 rounded-full animate-pop">
+                                <XCircle size={20} className="text-red-600" />
+                            </div>
+                        ) : (
+                            <div className="bg-brand-primary/10 p-2 rounded-full relative">
+                                <LoaderCircle size={20} className="animate-spin text-brand-primary" />
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                            <h4 className="font-bold text-brand-text text-sm">
+                                {isComplete ? 'Processamento Concluído' : isError ? 'Erro no Processamento' : (isEnriching ? 'Enriquecendo Itens' : 'Lendo Imagem')}
+                            </h4>
+                            {!isComplete && !isError && (
+                                <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100 flex items-center gap-1">
+                                    <Clock size={10} /> {elapsedTime}s
+                                </span>
                             )}
                         </div>
-                    ))}
+                        <p className="text-xs text-brand-text-secondary mt-0.5 transition-all duration-300 ease-in-out">
+                            {isComplete 
+                                ? `${totalItems} itens adicionados à despensa` 
+                                : isError 
+                                    ? 'Tente enviar novamente' 
+                                    : currentMessage
+                            }
+                        </p>
+                    </div>
                 </div>
-            )}
+
+                {/* Real Progress Bar */}
+                {!isComplete && !isError && (
+                    <div className="relative">
+                        <div className="flex justify-between text-[10px] font-semibold text-gray-400 mb-1">
+                            <span>{isEnriching ? `${Math.round(displayProgress)}%` : 'Aguarde...'}</span>
+                            {isEnriching && <span>{totalItems} itens</span>}
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div 
+                                className="h-full bg-brand-primary transition-all duration-500 ease-out rounded-full relative"
+                                style={{ width: `${isComplete ? 100 : Math.max(5, displayProgress)}%` }}
+                            >
+                                {/* Shimmer Effect */}
+                                <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1.5s_infinite]" 
+                                     style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }}>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                {/* Database Sync Indicator (Visual Flair) */}
+                {isEnriching && (
+                    <div className="absolute bottom-2 right-2 opacity-20">
+                        <Database size={40} className="text-brand-primary animate-pulse" />
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

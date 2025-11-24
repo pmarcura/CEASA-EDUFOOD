@@ -1,10 +1,8 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Book, Award, BotMessageSquare, Home, Camera, LoaderCircle, LogOut, Carrot } from 'lucide-react';
-import { collection, doc, onSnapshot, query, where, getDocs, addDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { Book, Award, BotMessageSquare, Home, Camera, LoaderCircle, Carrot, Bell } from 'lucide-react';
 
-import type { User, PantryItem, Recipe, Tab, ChatMessage, FeedPost, MealLogEntry, MealFeedback, NovaClassificationKey, Comment, Swap } from './types';
+import type { User, PantryItem, Recipe, Tab, ChatMessage, FeedPost, MealLogEntry, MealFeedback, NovaClassificationKey, Comment, Swap, UserProfile, PantryReviewChange } from './types';
 import { AppContext } from './contexts/AppContext';
 import PantryDisplay from './components/PantryDisplay';
 import HomeScreen from './components/HomeScreen';
@@ -22,7 +20,17 @@ import { useGamification } from './hooks/useGamification';
 import LevelUpModal from './components/gamification/LevelUpModal';
 import { getLevelForXp, ACTION_XP_VALUES } from './services/gamificationService';
 import XpNotice from './components/gamification/XpNotice';
+import StreakCard from './components/StreakCard';
+import ProfileScreen from './components/ProfileScreen';
+import WeeklyPlannerCard from './components/WeeklyPlannerCard';
+import MealPlannerModal from './components/modals/MealPlannerModal';
+import UpcomingMealCard from './components/UpcomingMealCard';
+import PantryReviewCard from './components/PantryReviewCard';
+import PantryReviewModal from './components/modals/PantryReviewModal';
+import { formatQuantity, normalizeUnit, toTitleCase } from './utils/formatters';
+import { calculateDeduction } from './utils/unitConversion';
 
+// ... (keeping sampleRecipe and initialFeedPosts same as before) ...
 const sampleRecipe: Recipe = {
   title: 'Foguetes de Cenoura',
   total_time_min: 15,
@@ -50,7 +58,6 @@ const sampleRecipe: Recipe = {
   storage: "Consumir imediatamente para manter a crocância.",
 };
 
-
 const initialFeedPosts: FeedPost[] = [
   {
     id: '1',
@@ -60,7 +67,7 @@ const initialFeedPosts: FeedPost[] = [
     caption: 'Meu filho só comeu cenoura quando virou um foguete! 🚀🥕 Adicionamos gergelim como estrelas e ficou um sucesso!',
     likes: 25,
     likedBy: [],
-    timestamp: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
+    timestamp: Date.now() - 1000 * 60 * 60 * 2,
     recipe: sampleRecipe,
     comments: [],
   },
@@ -72,35 +79,10 @@ const initialFeedPosts: FeedPost[] = [
     caption: 'Panquecas de espinafre para um café da manhã de super-herói! O segredo é misturar tudo no liquidificador.',
     likes: 30,
     likedBy: [],
-    timestamp: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
+    timestamp: Date.now() - 1000 * 60 * 60 * 24,
     comments: [],
   },
 ];
-
-
-// Helper functions for unit normalization and conversion
-const normalizeUnit = (unit: string): string => {
-    const u = unit.toLowerCase().trim();
-    if (['g', 'grama', 'gramas'].includes(u)) return 'g';
-    if (['kg', 'quilo', 'quilos', 'quilograma', 'quilogramas'].includes(u)) return 'kg';
-    if (['ml', 'mililitro', 'mililitros'].includes(u)) return 'ml';
-    if (['l', 'litro', 'litros'].includes(u)) return 'l';
-    if (['un', 'unidade', 'unidades'].includes(u)) return 'un';
-    return u; // Return original if not recognized
-};
-
-const convertToBaseUnit = (quantity: number, unit: string): { quantity: number; unit: string } => {
-    const normalized = normalizeUnit(unit);
-    switch (normalized) {
-        case 'kg':
-            return { quantity: quantity * 1000, unit: 'g' };
-        case 'l':
-            return { quantity: quantity * 1000, unit: 'ml' };
-        default:
-            return { quantity, unit: normalized };
-    }
-};
-
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -109,7 +91,7 @@ const App: React.FC = () => {
   
   const gamification = useGamification(user);
 
-  // Data states, now synced with Firestore
+  // Data states
   const [pantry, setPantry] = useState<PantryItem[]>([]);
   const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
   const [mealLog, setMealLog] = useState<MealLogEntry[]>([]);
@@ -124,10 +106,14 @@ const App: React.FC = () => {
   const [viewingRecipe, setViewingRecipe] = useState<Recipe | null>(null);
   const [isCookingMode, setIsCookingMode] = useState(false);
   const [cookingRecipe, setCookingRecipe] = useState<Recipe | null>(null);
+  const [isViewingProfile, setIsViewingProfile] = useState(false);
+  const [isMealPlannerOpen, setIsMealPlannerOpen] = useState(false);
+  const [isPantryReviewOpen, setIsPantryReviewOpen] = useState(false);
+  const [upcomingMeal, setUpcomingMeal] = useState<MealLogEntry | null>(null);
 
   // Auth state listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
         setIsLoadingAuth(false);
@@ -136,41 +122,39 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
   
-  // Data Listeners (excluding profile, which is now in useGamification hook)
+  // Data Listeners
   useEffect(() => {
     if (!user) {
       setPantry([]);
       setSavedRecipes([]);
       setMealLog([]);
-      setIsLoadingAuth(false); // Ensure loading stops if user signs out
+      setIsLoadingAuth(false);
       return;
     }
-    // Auth is done, but profile might still be loading
     setIsLoadingAuth(false);
 
     const handleError = (error: Error, source: string) => {
         console.error(`Firestore error in ${source} listener:`, error);
     };
     
-    const pantryRef = collection(db, 'users', user.uid, 'pantry');
-    const pantryUnsub = onSnapshot(pantryRef, (snapshot) => {
+    const pantryRef = db.collection('users').doc(user.uid).collection('pantry');
+    const pantryUnsub = pantryRef.onSnapshot((snapshot) => {
         const pantryData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as PantryItem[];
         setPantry(pantryData);
     }, (error) => handleError(error, 'pantry'));
     
-    const recipesRef = collection(db, 'users', user.uid, 'savedRecipes');
-    const recipesUnsub = onSnapshot(recipesRef, (snapshot) => {
+    const recipesRef = db.collection('users').doc(user.uid).collection('savedRecipes');
+    const recipesUnsub = recipesRef.onSnapshot((snapshot) => {
         const recipeData = snapshot.docs.map(doc => ({ ...doc.data() })) as Recipe[];
         setSavedRecipes(recipeData);
     }, (error) => handleError(error, 'saved recipes'));
 
-    const mealLogRef = collection(db, 'users', user.uid, 'mealLog');
-    const mealLogUnsub = onSnapshot(mealLogRef, (snapshot) => {
+    const mealLogRef = db.collection('users').doc(user.uid).collection('mealLog');
+    const mealLogUnsub = mealLogRef.onSnapshot((snapshot) => {
         const logData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MealLogEntry[];
         setMealLog(logData.sort((a, b) => b.timestamp - a.timestamp));
     }, (error) => handleError(error, 'meal log'));
 
-    // Cleanup listeners on unmount or user change
     return () => {
       pantryUnsub();
       recipesUnsub();
@@ -178,7 +162,7 @@ const App: React.FC = () => {
     };
   }, [user]);
 
-  // Memoize the key for the swaps useEffect dependency array to avoid unnecessary re-fetching
+  // Swap Logic
   const ultraProcessedItemsKey = useMemo(() => {
     const items = pantry
         .filter(i => i.novaClassification === 'ultra_processed')
@@ -187,7 +171,6 @@ const App: React.FC = () => {
     return JSON.stringify(items);
   }, [pantry]);
 
-  // Effect for fetching AI swaps. Only runs when the list of ultra-processed items changes.
   useEffect(() => {
     if (!user || !gamification.userProfile?.onboardingCompleted) return;
     
@@ -214,40 +197,91 @@ const App: React.FC = () => {
     
     fetchAndSetSwaps();
   }, [user, gamification.userProfile?.onboardingCompleted, ultraProcessedItemsKey]);
+  
+  // Upcoming Meal Logic
+  useEffect(() => {
+    const checkUpcomingMeal = () => {
+        if (!mealLog || mealLog.length === 0) {
+            setUpcomingMeal(null);
+            return;
+        }
+
+        const now = Date.now();
+        const threeHoursFromNow = now + 3 * 60 * 60 * 1000;
+
+        const upcoming = mealLog
+            .filter(log => log.timestamp > now && log.timestamp <= threeHoursFromNow)
+            .sort((a, b) => a.timestamp - b.timestamp);
+        
+        const nextMeal = upcoming.length > 0 ? upcoming[0] : null;
+        
+        setUpcomingMeal(currentUpcoming => {
+            if (currentUpcoming?.id === nextMeal?.id) {
+                return currentUpcoming;
+            }
+            return nextMeal;
+        });
+    };
+
+    const intervalId = setInterval(checkUpcomingMeal, 60 * 1000);
+    checkUpcomingMeal();
+
+    return () => clearInterval(intervalId);
+  }, [mealLog]);
 
 
+  // --- Action Handlers ---
   const addItemsToPantry = useCallback(async (newItems: Omit<PantryItem, 'id'>[]) => {
     if (!user) return;
-    const pantryRef = collection(db, 'users', user.uid, 'pantry');
+    const pantryRef = db.collection('users').doc(user.uid).collection('pantry');
+    const batch = db.batch();
     
-    const batch = writeBatch(db);
-
     for (const newItem of newItems) {
-        const q = query(pantryRef, where("name", "==", newItem.name), where("unit", "==", newItem.unit));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-            const existingDoc = querySnapshot.docs[0];
-            const newQuantity = existingDoc.data().quantity + newItem.quantity;
-            batch.update(existingDoc.ref, { quantity: newQuantity });
+        // Normalize name AND unit before querying
+        const normalizedName = toTitleCase(newItem.name);
+        const normalizedUnit = normalizeUnit(newItem.unit);
+        
+        // Check for existing item with SAME name and SAME unit
+        const existingItem = pantry.find(
+            p => p.name && 
+                 p.name.toLowerCase() === normalizedName.toLowerCase() && 
+                 normalizeUnit(p.unit) === normalizedUnit
+        );
+        
+        // Enforce formatting on new item data
+        const cleanNewItem = {
+            ...newItem,
+            name: normalizedName,
+            unit: normalizedUnit,
+            quantity: formatQuantity(newItem.quantity)
+        };
+
+        if (existingItem) {
+            // Item exists! Update quantity.
+            const itemRef = pantryRef.doc(existingItem.id);
+            const currentQty = existingItem.quantity || 0;
+            const newQuantity = formatQuantity(currentQty + cleanNewItem.quantity);
+            batch.update(itemRef, { quantity: newQuantity });
         } else {
-            const newDocRef = doc(pantryRef);
-            batch.set(newDocRef, newItem);
+            // Create new item
+            const newDocRef = pantryRef.doc();
+            batch.set(newDocRef, cleanNewItem);
         }
     }
     await batch.commit();
-  }, [user]);
+  }, [user, pantry]);
 
   const removeItemFromPantry = useCallback(async (itemId: string) => {
     if (!user) return;
-    const itemRef = doc(db, 'users', user.uid, 'pantry', itemId);
-    await deleteDoc(itemRef);
+    const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(itemId);
+    await itemRef.delete();
   }, [user]);
 
    const removeItemsFromPantry = useCallback(async (itemIds: string[]) => {
     if (!user || itemIds.length === 0) return;
-    const batch = writeBatch(db);
+    const batch = db.batch();
     itemIds.forEach(id => {
-        const itemRef = doc(db, 'users', user.uid, 'pantry', id);
+        const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(id);
         batch.delete(itemRef);
     });
     await batch.commit();
@@ -255,27 +289,72 @@ const App: React.FC = () => {
 
   const updatePantryItemQuantity = useCallback(async (itemId: string, newQuantity: number) => {
      if (!user) return;
-     const itemRef = doc(db, 'users', user.uid, 'pantry', itemId);
-     await updateDoc(itemRef, { quantity: Math.max(0, newQuantity) });
+     const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(itemId);
+     await itemRef.update({ quantity: formatQuantity(Math.max(0, newQuantity)) });
   }, [user]);
 
   const updatePantryItemDetails = useCallback(async (itemId: string, updates: Partial<Omit<PantryItem, 'id'>>) => {
      if (!user) return;
-     const itemRef = doc(db, 'users', user.uid, 'pantry', itemId);
-     await updateDoc(itemRef, updates);
+     const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(itemId);
+     // Clean any quantity updates
+     if (updates.quantity !== undefined) {
+         updates.quantity = formatQuantity(updates.quantity);
+     }
+     if (updates.unit !== undefined) {
+         updates.unit = normalizeUnit(updates.unit);
+     }
+     await itemRef.update(updates);
   }, [user]);
+  
+  const updateUserProfile = useCallback(async (updates: Partial<UserProfile>) => {
+    if (!user) return;
+    const userDocRef = db.collection('users').doc(user.uid);
+    await userDocRef.update(updates);
+  }, [user]);
+
+  const updateUserAvatar = useCallback(async (photoURL: string) => {
+    if (!user || !auth.currentUser) return;
+    await auth.currentUser.updateProfile({ photoURL });
+  }, [user]);
+
 
   const saveRecipe = useCallback(async (recipeToSave: Recipe) => {
     if (!user) return;
-    const recipesRef = collection(db, 'users', user.uid, 'savedRecipes');
-    const q = query(recipesRef, where("title", "==", recipeToSave.title));
-    const existing = await getDocs(q);
+    const recipesRef = db.collection('users').doc(user.uid).collection('savedRecipes');
+    const existing = await recipesRef.where("title", "==", recipeToSave.title).get();
     if (existing.empty) {
-        await addDoc(recipesRef, recipeToSave);
+        await recipesRef.add(recipeToSave);
     }
   }, [user]);
   
-  // Chat-related functions (remain local state)
+  const completePantryReview = useCallback(async (changes: PantryReviewChange[]) => {
+    if (!user) return;
+    const batch = db.batch();
+    let totalXp = 0;
+    changes.forEach(change => {
+        const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(change.itemId);
+        switch (change.action) {
+            case 'update':
+                const updates: { quantity: number; unit?: string } = { quantity: formatQuantity(change.newQuantity!) };
+                if (change.newUnit) updates.unit = normalizeUnit(change.newUnit);
+                batch.update(itemRef, updates);
+                totalXp += ACTION_XP_VALUES.PANTRY_REVIEW_UPDATE;
+                break;
+            case 'remove':
+                batch.delete(itemRef);
+                totalXp += ACTION_XP_VALUES.PANTRY_REVIEW_REMOVE;
+                break;
+            case 'keep':
+                totalXp += ACTION_XP_VALUES.PANTRY_REVIEW_KEEP;
+                break;
+        }
+    });
+    const userDocRef = db.collection('users').doc(user.uid);
+    batch.update(userDocRef, { lastPantryReview: Date.now() });
+    await batch.commit();
+    if (totalXp > 0) gamification.awardXp(totalXp + ACTION_XP_VALUES.PANTRY_REVIEW_BONUS, "Revisão da Despensa Concluída!");
+  }, [user, gamification]);
+
   const addMessageToChat = useCallback((message: Omit<ChatMessage, 'id'>) => {
     const newMessage = { ...message, id: `${Date.now()}-${Math.random()}` };
     setChatHistory(prev => [...prev, newMessage]);
@@ -294,6 +373,25 @@ const App: React.FC = () => {
     setChatHistory(prev => prev.map(msg => ({ ...msg, quickReplies: undefined })));
   }, []);
 
+  const addMealLogEntry = useCallback(async (entry: Omit<MealLogEntry, 'id'>) => {
+    if (!user) return;
+    const mealLogRef = db.collection('users').doc(user.uid).collection('mealLog');
+    await mealLogRef.add(entry);
+    gamification.awardXp(ACTION_XP_VALUES.RECIPE_FEEDBACK, 'Refeição Planejada!');
+  }, [user, gamification]);
+
+  const updateMealLogEntry = useCallback(async (entryId: string, updates: Partial<Omit<MealLogEntry, 'id'>>) => {
+    if (!user) return;
+    const entryRef = db.collection('users').doc(user.uid).collection('mealLog').doc(entryId);
+    await entryRef.update(updates);
+  }, [user]);
+
+  const deleteMealLogEntry = useCallback(async (entryId: string) => {
+    if (!user) return;
+    const entryRef = db.collection('users').doc(user.uid).collection('mealLog').doc(entryId);
+    await entryRef.delete();
+  }, [user]);
+
   const logMealCompletion = useCallback(async (recipe: Recipe, feedback: MealFeedback) => {
     if (!user) return;
     
@@ -302,28 +400,17 @@ const App: React.FC = () => {
         gamification.awardXp(ACTION_XP_VALUES.RECIPE_FEEDBACK, "Feedback enviado!");
     }
     
-    const batch = writeBatch(db);
+    const batch = db.batch();
     const recipeIngredients = recipe.ingredients.flatMap(section => section.items);
-    
-    // Calculate NOVA breakdown
-    const novaBreakdown: Record<NovaClassificationKey, number> = {
-        in_natura: 0,
-        culinary_ingredients: 0,
-        processed: 0,
-        ultra_processed: 0,
-    };
-
+    const novaBreakdown: Record<NovaClassificationKey, number> = { in_natura: 0, culinary_ingredients: 0, processed: 0, ultra_processed: 0 };
     for (const ing of recipeIngredients) {
-        const pantryItem = pantry.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
-        if (pantryItem) {
-            novaBreakdown[pantryItem.novaClassification]++;
-        }
+        const pantryItem = pantry.find(p => p.name.toLowerCase().includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p.name.toLowerCase()));
+        if (pantryItem) novaBreakdown[pantryItem.novaClassification]++;
     }
     
-    // Log the meal
     const allIngredients = recipe.ingredients.flatMap(section => section.items.map(item => item.displayString));
     const foodGroupPortions = await analyzeRecipeForFoodGroups(allIngredients);
-    const mealLogRef = collection(db, 'users', user.uid, 'mealLog');
+    const mealLogRef = db.collection('users').doc(user.uid).collection('mealLog');
     const newLogEntry: Omit<MealLogEntry, 'id'> = {
         recipeTitle: recipe.title,
         timestamp: Date.now(),
@@ -333,56 +420,41 @@ const App: React.FC = () => {
         serves: recipe.serves,
         foodGroupPortions,
         novaBreakdown,
+        recipe: recipe,
     };
-    batch.set(doc(mealLogRef), newLogEntry);
+    batch.set(mealLogRef.doc(), newLogEntry);
 
-    // Deduct ingredients from pantry with unit conversion logic
+    // Deduct ingredients logic with SMART CONVERSION
     for (const ing of recipeIngredients) {
-        const pantryItem = pantry.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
-
+        // Find matched item in pantry
+        const pantryItem = pantry.find(p => p.name.toLowerCase().includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p.name.toLowerCase()));
+        
         if (pantryItem) {
-            const itemRef = doc(db, 'users', user.uid, 'pantry', pantryItem.id);
+            const itemRef = db.collection('users').doc(user.uid).collection('pantry').doc(pantryItem.id);
             
-            const pantryBase = convertToBaseUnit(pantryItem.quantity, pantryItem.unit);
-            const recipeBase = convertToBaseUnit(ing.quantity, ing.unit);
-
-            if (pantryBase.unit === recipeBase.unit) {
-                const newBaseQuantity = pantryBase.quantity - recipeBase.quantity;
-
-                if (newBaseQuantity <= 0.001) { // Use a small threshold for floating point
+            // Calculate deduction using the smart converter
+            const deductionAmount = calculateDeduction(ing.quantity, ing.unit, pantryItem.unit, pantryItem.name);
+            
+            if (deductionAmount !== null) {
+                const newPantryQuantity = pantryItem.quantity - deductionAmount;
+                
+                if (newPantryQuantity <= 0.001) { // Epsilon for float comparison
                     batch.delete(itemRef);
                 } else {
-                    let newPantryQuantity: number;
-                    const originalPantryUnitNormalized = normalizeUnit(pantryItem.unit);
-
-                    if (originalPantryUnitNormalized === 'kg') {
-                        newPantryQuantity = newBaseQuantity / 1000;
-                    } else if (originalPantryUnitNormalized === 'l') {
-                        newPantryQuantity = newBaseQuantity / 1000;
-                    } else {
-                        newPantryQuantity = newBaseQuantity;
-                    }
-                    
-                    batch.update(itemRef, { quantity: parseFloat(newPantryQuantity.toFixed(3)) });
+                    batch.update(itemRef, { quantity: formatQuantity(newPantryQuantity) });
                 }
-            } else {
-                 console.warn(`Unit mismatch for ingredient "${ing.name}". Pantry has "${pantryItem.unit}", recipe needs "${ing.unit}". Not deducting.`);
             }
-        } else {
-            console.warn(`Ingredient "${ing.name}" not found in pantry. Not deducting.`);
         }
     }
     
     await batch.commit();
     
-    // NEW LOGIC: Add feedback as a comment on the feed post.
+    // Feed post logic...
     setFeedPosts(prevPosts => {
         const postIndex = prevPosts.findIndex(p => p.recipe?.title === recipe.title);
         if (postIndex === -1) return prevPosts;
-
         const updatedPosts = [...prevPosts];
         const targetPost = { ...updatedPosts[postIndex] };
-
         const newComment: Comment = {
             id: `${Date.now()}-${Math.random()}`,
             authorUid: user.uid,
@@ -393,11 +465,9 @@ const App: React.FC = () => {
             image: feedback.image,
             timestamp: Date.now(),
         };
-
         const existingComments = targetPost.comments || [];
         targetPost.comments = [...existingComments, newComment];
         updatedPosts[postIndex] = targetPost;
-        
         return updatedPosts;
     });
 
@@ -405,14 +475,13 @@ const App: React.FC = () => {
     setCookingRecipe(null);
     setViewingRecipe(null);
 
-    addMessageToChat({
-        role: 'system',
-        text: `Ótimo trabalho! A receita "${recipe.title}" foi concluída, sua despensa foi atualizada e seu comentário foi postado!`,
-    });
-}, [user, addMessageToChat, gamification, pantry]);
+    addMessageToChat({ role: 'system', text: `Ótimo trabalho! A receita "${recipe.title}" foi concluída!` });
+  }, [user, addMessageToChat, gamification, pantry]);
 
+  // ... rest of the component (handleLogout, addPostToFeed, handleLikePost, renderContent, navItems, return) ...
   const handleLogout = useCallback(async () => {
-    await signOut(auth);
+    await auth.signOut();
+    setIsViewingProfile(false);
   }, []);
 
   const addPostToFeed = useCallback((post: Omit<FeedPost, 'id' | 'likes' | 'likedBy' | 'timestamp' | 'authorName' | 'authorAvatar'>) => {
@@ -433,63 +502,28 @@ const App: React.FC = () => {
   const handleLikePost = useCallback((postId: string) => {
     if (!user) return;
     const userId = user.uid;
-
-    setFeedPosts(prevPosts =>
-        prevPosts.map(post => {
-            if (post.id === postId) {
-                const isLiked = post.likedBy.includes(userId);
-                if (isLiked) {
-                    // Unlike
-                    return {
-                        ...post,
-                        likes: post.likes - 1,
-                        likedBy: post.likedBy.filter(id => id !== userId),
-                    };
-                } else {
-                    // Like
-                    return {
-                        ...post,
-                        likes: post.likes + 1,
-                        likedBy: [...post.likedBy, userId],
-                    };
-                }
-            }
-            return post;
-        })
-    );
+    setFeedPosts(prevPosts => prevPosts.map(post => {
+        if (post.id === postId) {
+            const isLiked = post.likedBy.includes(userId);
+            if (isLiked) return { ...post, likes: post.likes - 1, likedBy: post.likedBy.filter(id => id !== userId) };
+            else return { ...post, likes: post.likes + 1, likedBy: [...post.likedBy, userId] };
+        }
+        return post;
+    }));
   }, [user]);
 
   const contextValue = useMemo(() => ({
-    user,
-    userProfile: gamification.userProfile,
-    logout: handleLogout,
-    pantry,
-    addItemsToPantry,
-    removeItemFromPantry,
-    removeItemsFromPantry,
-    updatePantryItemQuantity,
-    updatePantryItemDetails,
-    savedRecipes,
-    saveRecipe,
-    chatHistory,
-    addMessageToChat,
-    updateMessage,
-    clearChatQuickReplies,
-    feedPosts,
-    addPostToFeed,
-    handleLikePost,
-    viewingRecipe,
-    setViewingRecipe,
-    isCookingMode,
-    setIsCookingMode,
-    cookingRecipe,
-    setCookingRecipe,
-    mealLog,
-    logMealCompletion,
-    swaps,
-    isSwapsLoading,
+    user, userProfile: gamification.userProfile, updateUserProfile, updateUserAvatar, logout: handleLogout,
+    pantry, addItemsToPantry, removeItemFromPantry, removeItemsFromPantry, updatePantryItemQuantity, updatePantryItemDetails, completePantryReview,
+    savedRecipes, saveRecipe,
+    chatHistory, addMessageToChat, updateMessage, clearChatQuickReplies,
+    feedPosts, addPostToFeed, handleLikePost,
+    viewingRecipe, setViewingRecipe, isCookingMode, setIsCookingMode, cookingRecipe, setCookingRecipe,
+    mealLog, logMealCompletion, addMealLogEntry, updateMealLogEntry, deleteMealLogEntry,
+    swaps, isSwapsLoading, isViewingProfile, setIsViewingProfile, isMealPlannerOpen, setIsMealPlannerOpen, upcomingMeal, isPantryReviewOpen, setIsPantryReviewOpen,
     ...gamification,
-  }), [user, pantry, addItemsToPantry, removeItemFromPantry, removeItemsFromPantry, updatePantryItemQuantity, updatePantryItemDetails, savedRecipes, saveRecipe, chatHistory, addMessageToChat, updateMessage, clearChatQuickReplies, feedPosts, addPostToFeed, handleLikePost, viewingRecipe, isCookingMode, cookingRecipe, mealLog, logMealCompletion, gamification, handleLogout, swaps, isSwapsLoading]);
+  }), [user, gamification.userProfile, updateUserProfile, updateUserAvatar, handleLogout, pantry, addItemsToPantry, removeItemFromPantry, removeItemsFromPantry, updatePantryItemQuantity, updatePantryItemDetails, completePantryReview, savedRecipes, saveRecipe, chatHistory, addMessageToChat, updateMessage, clearChatQuickReplies, feedPosts, addPostToFeed, handleLikePost, viewingRecipe, isCookingMode, cookingRecipe, mealLog, logMealCompletion, addMealLogEntry, updateMealLogEntry, deleteMealLogEntry, gamification, swaps, isSwapsLoading, isViewingProfile, isMealPlannerOpen, upcomingMeal, isPantryReviewOpen]);
+
 
   const renderContent = () => {
     switch (activeTab) {
@@ -514,82 +548,112 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-brand-background flex items-center justify-center">
-        <LoaderCircle className="h-10 w-10 animate-spin text-brand-primary" />
+        <LoaderCircle className="h-12 w-12 animate-spin text-brand-primary" />
       </div>
     );
   }
 
-  if (!user) {
-    return <AuthScreen />;
-  }
-  
-  if (!gamification.userProfile?.onboardingCompleted) {
-    return <OnboardingFlow user={user} />;
-  }
+  if (!user) return <AuthScreen />;
+  if (!gamification.userProfile?.onboardingCompleted) return <OnboardingFlow user={user} />;
 
-  const showMainUI = !viewingRecipe && !isCookingMode;
-
+  const showMainUI = !viewingRecipe && !isCookingMode && !isViewingProfile;
   const { level, xpForNextLevel, xpInCurrentLevel } = getLevelForXp(gamification.userProfile?.xp || 0);
   const xpPercentage = xpForNextLevel > 0 ? (xpInCurrentLevel / xpForNextLevel) * 100 : 0;
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className="min-h-screen bg-brand-background font-sans text-brand-text flex flex-col">
+      <div className="min-h-screen bg-brand-background font-sans text-brand-text flex flex-col pb-24 md:pb-0">
         {gamification.xpNotice && <XpNotice notice={gamification.xpNotice} onClose={gamification.removeXpNotice} />}
         {gamification.levelUpInfo && <LevelUpModal levelUpInfo={gamification.levelUpInfo} close={gamification.closeLevelUpModal} />}
         
         {viewingRecipe && !isCookingMode && <RecipeDetailView />}
         {cookingRecipe && isCookingMode && <CookingModeView />}
+        {isViewingProfile && <ProfileScreen />}
+        {isMealPlannerOpen && <MealPlannerModal />}
+        {isPantryReviewOpen && <PantryReviewModal />}
         
         {activeTab === 'chat' ? (
-           <div className="flex flex-col h-full flex-1">
+           <div className="flex flex-col h-full flex-1 relative">
              <ProfessorNutriChat />
-             <div className="flex-shrink-0">
+             <div className="fixed bottom-6 left-4 right-4 z-50">
                 <BottomNav items={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
              </div>
           </div>
         ) : (
-          <div className={showMainUI ? 'flex flex-col flex-1 w-full max-w-7xl mx-auto' : 'hidden'}>
-            <header className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-2">
-                    <img src="/professor-nutri-favicon.png" alt="EduFood Logo" className="h-8 w-8 rounded-lg" />
-                    <h1 className="text-2xl font-bold text-brand-text tracking-tight">
-                        EduFood
-                    </h1>
-                </div>
-                <img 
-                    src={user.photoURL || "/professor-nutri.png"}
-                    alt="User Avatar" 
-                    className="h-10 w-10 rounded-full object-cover border-2 border-brand-surface shadow-sm cursor-pointer"
-                    onClick={handleLogout}
-                />
-            </header>
-            
-             <div className="px-4 mb-4">
-                <div className="w-full bg-brand-surface p-2.5 rounded-xl border border-brand-border shadow-sm">
-                    <div className="flex justify-between items-center text-xs font-bold mb-1.5">
-                        <span className="bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full">Nível {level}</span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-orange-500 flex items-center gap-1">
-                                <Carrot size={14} className="text-orange-400" />
-                                {gamification.userProfile.goldenCarrots || 0}
-                            </span>
+          <div className={showMainUI ? 'flex flex-col flex-1 w-full max-w-2xl mx-auto' : 'hidden'}>
+            {/* Header Moderno / Sticky */}
+            <header className="sticky top-0 z-30 bg-brand-background/90 backdrop-blur-md border-b border-transparent transition-all duration-200 px-5 py-3">
+                <div className="flex items-center justify-between mb-3">
+                     <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-glow">
+                             <img src="/professor-nutri-favicon.png" alt="Logo" className="h-6 w-6" />
+                        </div>
+                        <div className="flex flex-col">
+                            <h1 className="text-xl font-bold text-brand-text leading-tight font-display">
+                                Olá, {user.displayName?.split(' ')[0] || 'Família'}!
+                            </h1>
+                            <span className="text-xs font-medium text-brand-text-secondary">Vamos comer bem hoje?</span>
                         </div>
                     </div>
-                    <div className="w-full bg-brand-border rounded-full h-2 overflow-hidden">
-                        <div className="bg-gradient-to-r from-yellow-300 to-yellow-500 h-full rounded-full transition-all duration-500" style={{width: `${xpPercentage}%`}}></div>
-                    </div>
-                    <div className="text-right">
-                        <span className="text-xs text-brand-text-secondary font-semibold mt-1">{xpInCurrentLevel} / {xpForNextLevel} XP</span>
+                    <div className="flex items-center gap-3">
+                         <button className="p-2 bg-white rounded-full shadow-sm border border-gray-100 text-brand-text-secondary relative">
+                            <Bell size={20} />
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                         </button>
+                        <img 
+                            src={user.photoURL || "/professor-nutri.png"}
+                            alt="User" 
+                            className="h-10 w-10 rounded-full object-cover border-2 border-white shadow-sm cursor-pointer ring-2 ring-brand-border"
+                            onClick={() => setIsViewingProfile(true)}
+                        />
                     </div>
                 </div>
-            </div>
 
-            <main className="flex-1 overflow-y-auto p-4 pt-0 pb-20">
-              {renderContent()}
+                {/* Gamification Bar Compact */}
+                <div className="bg-white rounded-full p-1.5 pr-4 shadow-sm border border-brand-border flex items-center gap-3">
+                     <div className="w-10 h-10 rounded-full bg-brand-background flex items-center justify-center relative">
+                         <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                             <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
+                             <path className="text-brand-primary transition-all duration-1000 ease-out" strokeDasharray={`${xpPercentage}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                         </svg>
+                         <span className="text-xs font-bold text-brand-primary relative z-10">{level}</span>
+                     </div>
+                     <div className="flex-1">
+                         <div className="flex justify-between items-baseline">
+                            <span className="text-xs font-bold text-brand-text">Nível {level}</span>
+                            <span className="text-[10px] font-semibold text-brand-text-secondary">{xpInCurrentLevel}/{xpForNextLevel} XP</span>
+                         </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div className="bg-gradient-to-r from-brand-primary to-teal-400 h-full rounded-full transition-all duration-500" style={{width: `${xpPercentage}%`}}></div>
+                        </div>
+                     </div>
+                     <div className="flex items-center gap-1 pl-2 border-l border-gray-100">
+                        <Carrot size={16} className="text-orange-500 fill-orange-500" />
+                        <span className="font-bold text-sm text-brand-text">{gamification.userProfile?.goldenCarrots || 0}</span>
+                     </div>
+                </div>
+            </header>
+            
+            <main className="flex-1 overflow-y-auto p-5 space-y-6">
+                {/* Main Dashboard Widgets - Stacked Layout */}
+                <div className="flex flex-col gap-4">
+                     <StreakCard />
+                     <WeeklyPlannerCard />
+                     <PantryReviewCard />
+                </div>
+                
+                {/* Upcoming Context */}
+                <UpcomingMealCard />
+
+                {renderContent()}
+                
+                {/* Bottom Padding for Floating Nav */}
+                <div className="h-24"></div>
             </main>
             
-            <BottomNav items={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+            <div className="fixed bottom-6 left-4 right-4 z-50 max-w-2xl mx-auto">
+                <BottomNav items={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+            </div>
           </div>
         )}
       </div>

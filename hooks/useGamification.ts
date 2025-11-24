@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import type { User, UserProfile, PantryItem, XpNoticeInfo } from '../types';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { db, increment } from '../firebase/config';
+import type { User, UserProfile, PantryItem, XpNoticeInfo, MissionProgress } from '../types';
 import { getLevelForXp, getXpForNewItem, ACTION_XP_VALUES, MISSION_REWARDS } from '../services/gamificationService';
 import { DAILY_MISSIONS, WEEKLY_MISSIONS } from '../constants/missions';
 
@@ -31,96 +31,50 @@ const isSameWeek = (ts1: number, ts2: number) => {
     return startOfWeek1.getTime() === startOfWeek2.getTime();
 };
 
+const getNewMissions = (
+  existingMissionIds: string[],
+  allMissions: typeof DAILY_MISSIONS | typeof WEEKLY_MISSIONS,
+  count: number
+): { id: string, completed: boolean, lastReset: number }[] => {
+  const now = Date.now();
+  const availableMissions = allMissions.filter(m => !existingMissionIds.includes(m.id));
+  
+  // Shuffle available missions
+  for (let i = availableMissions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [availableMissions[i], availableMissions[j]] = [availableMissions[j], availableMissions[i]];
+  }
+
+  return availableMissions.slice(0, count).map(mission => ({
+    id: mission.id,
+    completed: false,
+    lastReset: now,
+  }));
+};
+
 export const useGamification = (user: User | null) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [xpNotice, setXpNotice] = useState<XpNoticeInfo | null>(null);
   const [levelUpInfo, setLevelUpInfo] = useState<LevelUpInfo | null>(null);
+  const [dailyCheckCompleted, setDailyCheckCompleted] = useState(false);
 
-  // Mission Reset Logic
-  const checkAndResetMissions = useCallback(async (profile: UserProfile) => {
-    if (!user) return;
-    const now = Date.now();
-    const userDocRef = doc(db, 'users', user.uid);
-    const updates: Partial<UserProfile> = {};
-
-    // Check Daily Mission
-    if (!profile.dailyMission || !isSameDay(profile.dailyMission.lastReset, now)) {
-        const newDailyMission = DAILY_MISSIONS[Math.floor(Math.random() * DAILY_MISSIONS.length)];
-        updates.dailyMission = {
-            id: newDailyMission.id,
-            completed: false,
-            lastReset: now
-        };
-    }
-
-    // Check Weekly Mission
-    if (!profile.weeklyMission || !isSameWeek(profile.weeklyMission.lastReset, now)) {
-         const newWeeklyMission = WEEKLY_MISSIONS[Math.floor(Math.random() * WEEKLY_MISSIONS.length)];
-        updates.weeklyMission = {
-            id: newWeeklyMission.id,
-            completed: false,
-            lastReset: now
-        };
-    }
-    
-    if (Object.keys(updates).length > 0) {
-        await updateDoc(userDocRef, updates);
-    }
-  }, [user]);
-
+  const userProfileRef = useRef(userProfile);
   useEffect(() => {
-    if (!user) {
-      setUserProfile(null);
-      setIsLoadingProfile(false);
-      return;
-    }
-    
-    setIsLoadingProfile(true);
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as UserProfile;
-        // Ensure default values for gamification fields
-        const profileWithDefaults: UserProfile = {
-          ...data,
-          xp: data.xp ?? 0,
-          level: data.level ?? 1,
-          goldenCarrots: data.goldenCarrots ?? 0,
-          dailyMission: data.dailyMission ?? { id: 'add-in-natura-1', completed: true, lastReset: 0 },
-          weeklyMission: data.weeklyMission ?? { id: 'cook-recipes-3', completed: true, lastReset: 0 },
-        };
-        setUserProfile(profileWithDefaults);
-        checkAndResetMissions(profileWithDefaults); // Check for resets after loading
-      } else {
-        setUserProfile({
-          onboardingCompleted: false,
-          xp: 0,
-          level: 1,
-          goldenCarrots: 0,
-          dailyMission: { id: 'add-in-natura-1', completed: true, lastReset: 0 },
-          weeklyMission: { id: 'cook-recipes-3', completed: true, lastReset: 0 },
-        });
-      }
-      setIsLoadingProfile(false);
-    }, (error) => {
-        console.error("Error fetching user profile:", error);
-        setIsLoadingProfile(false);
-    });
+    userProfileRef.current = userProfile;
+  }, [userProfile]);
 
-    return () => unsubscribe();
-  }, [user, checkAndResetMissions]);
 
   const awardXp = useCallback(async (xp: number, reason: string) => {
-    if (!user || !userProfile || xp === 0) return;
+    if (!user || !userProfileRef.current || xp === 0) return;
     
-    const oldXp = userProfile.xp || 0;
-    const newXp = oldXp + xp;
+    const oldXp = userProfileRef.current.xp || 0;
+    const newXp = Math.max(0, oldXp + xp);
     const { level: oldLevel } = getLevelForXp(oldXp);
     const { level: newLevel } = getLevelForXp(newXp);
 
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, {
+    const userDocRef = db.collection('users').doc(user.uid);
+    await userDocRef.update({
       xp: newXp,
       level: newLevel,
     });
@@ -130,26 +84,188 @@ export const useGamification = (user: User | null) => {
     if (newLevel > oldLevel) {
       setLevelUpInfo({ oldLevel, newLevel });
     }
-  }, [user, userProfile]);
-  
-  const awardGoldenCarrots = useCallback(async (amount: number) => {
-    if (!user || amount <= 0) return;
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, {
-        goldenCarrots: increment(amount)
-    });
   }, [user]);
 
-  const claimMissionReward = useCallback(async (type: 'daily' | 'weekly') => {
-      if (!user || !userProfile) return;
-      const missionField = type === 'daily' ? 'dailyMission' : 'weeklyMission';
-      const missionReward = type === 'daily' ? MISSION_REWARDS.DAILY : MISSION_REWARDS.WEEKLY;
+  const runDailyChecks = useCallback(async (profile: UserProfile) => {
+    if (!user) return;
+    const now = Date.now();
+    const userDocRef = db.collection('users').doc(user.uid);
+    const updates: Partial<UserProfile> = {};
 
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-          [`${missionField}.completed`]: true
+    // --- Streak Logic ---
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const lastLoginDate = new Date(profile.lastLogin || 0);
+    lastLoginDate.setHours(0, 0, 0, 0);
+    
+    let newStreak = profile.streak || 0;
+
+    if (today.getTime() !== lastLoginDate.getTime()) {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      if (lastLoginDate.getTime() === yesterday.getTime()) {
+        newStreak++;
+        updates.streak = newStreak;
+      } else {
+        newStreak = 1;
+        updates.streak = 1;
+      }
+      updates.lastLogin = today.getTime();
+      
+      if (newStreak > 1) {
+        awardXp(5 * newStreak, `${newStreak} dias de ofensiva!`);
+      }
+    }
+
+    // --- Daily Missions Reset ---
+    const activeDailyMissions = profile.dailyMissions.filter(m => isSameDay(m.lastReset, now));
+    if (activeDailyMissions.length < 2) {
+      const existingIds = activeDailyMissions.map(m => m.id);
+      const missionsToAdd = 2 - activeDailyMissions.length;
+      updates.dailyMissions = [...activeDailyMissions, ...getNewMissions(existingIds, DAILY_MISSIONS, missionsToAdd)];
+    }
+
+    // --- Weekly Missions Reset ---
+    const activeWeeklyMissions = profile.weeklyMissions.filter(m => isSameWeek(m.lastReset, now));
+     if (activeWeeklyMissions.length < 2) {
+      const existingIds = activeWeeklyMissions.map(m => m.id);
+      const missionsToAdd = 2 - activeWeeklyMissions.length;
+      updates.weeklyMissions = [...activeWeeklyMissions, ...getNewMissions(existingIds, WEEKLY_MISSIONS, missionsToAdd)];
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await userDocRef.update(updates);
+    }
+  }, [user, awardXp]);
+
+  // Handle data listening and migration
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(null);
+      setIsLoadingProfile(false);
+      setDailyCheckCompleted(false); // Reset on logout
+      return;
+    }
+    
+    setIsLoadingProfile(true);
+    const userDocRef = db.collection('users').doc(user.uid);
+
+    const unsubscribe = userDocRef.onSnapshot((docSnapshot) => {
+      if (docSnapshot.exists) {
+        const data = docSnapshot.data() as UserProfile;
+        
+        let profileToProcess: UserProfile = { ...data };
+        let needsMigrationUpdate = false;
+        
+        if (data.dailyMission && !data.dailyMissions) {
+            profileToProcess.dailyMissions = [data.dailyMission];
+            delete profileToProcess.dailyMission;
+            needsMigrationUpdate = true;
+        }
+         if (data.weeklyMission && !data.weeklyMissions) {
+            profileToProcess.weeklyMissions = [data.weeklyMission];
+            delete profileToProcess.weeklyMission;
+            needsMigrationUpdate = true;
+        }
+
+        const profileWithDefaults: UserProfile = {
+            ...profileToProcess,
+            xp: profileToProcess.xp ?? 0,
+            level: profileToProcess.level ?? 1,
+            goldenCarrots: profileToProcess.goldenCarrots ?? 0,
+            dailyMissions: profileToProcess.dailyMissions ?? [],
+            weeklyMissions: profileToProcess.weeklyMissions ?? [],
+            streak: profileToProcess.streak ?? 0,
+            lastLogin: profileToProcess.lastLogin ?? 0,
+        };
+
+        setUserProfile(profileWithDefaults);
+        
+        if (needsMigrationUpdate) {
+            const { dailyMission, weeklyMission, ...restOfProfile } = profileWithDefaults;
+            userDocRef.update(restOfProfile);
+        }
+
+        if (!dailyCheckCompleted && profileWithDefaults.onboardingCompleted) {
+          runDailyChecks(profileWithDefaults);
+          setDailyCheckCompleted(true);
+        }
+
+      } else {
+         setUserProfile({
+          onboardingCompleted: false,
+          xp: 0,
+          level: 1,
+          goldenCarrots: 0,
+          dailyMissions: [],
+          weeklyMissions: [],
+          streak: 0,
+          lastLogin: 0,
+        });
+      }
+      setIsLoadingProfile(false);
+    }, (error) => {
+        console.error("Error fetching user profile:", error);
+        setIsLoadingProfile(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, runDailyChecks, dailyCheckCompleted]);
+  
+  const awardGoldenCarrots = useCallback(async (amount: number, reason: string) => {
+    if (!user || amount <= 0) return;
+    const userDocRef = db.collection('users').doc(user.uid);
+    await userDocRef.update({
+        goldenCarrots: increment(amount)
+    });
+    // This uses the XP notice system to show a "carrot" notice.
+    // We can create a separate notice system for carrots if needed.
+    // For now, let's just show a toast-like message in the console.
+    console.log(`Awarded ${amount} Golden Carrots for: ${reason}`);
+  }, [user]);
+
+  const claimMissionReward = useCallback(async (missionId: string) => {
+      if (!user || !userProfile) return;
+      const userDocRef = db.collection('users').doc(user.uid);
+
+      let missionType: 'daily' | 'weekly' | null = null;
+      let missionReward = 0;
+      let missionTitle = '';
+
+      const newDailyMissions = userProfile.dailyMissions.map(m => {
+          if (m.id === missionId) {
+              const missionDef = DAILY_MISSIONS.find(def => def.id === missionId);
+              if (missionDef) {
+                missionType = 'daily';
+                missionReward = missionDef.reward;
+                missionTitle = missionDef.title;
+                return { ...m, completed: true };
+              }
+          }
+          return m;
       });
-      await awardGoldenCarrots(missionReward);
+
+      const newWeeklyMissions = userProfile.weeklyMissions.map(m => {
+           if (m.id === missionId) {
+                const missionDef = WEEKLY_MISSIONS.find(def => def.id === missionId);
+                if (missionDef) {
+                    missionType = 'weekly';
+                    missionReward = missionDef.reward;
+                    missionTitle = missionDef.title;
+                    return { ...m, completed: true };
+                }
+          }
+          return m;
+      });
+
+      if (missionType) {
+        await userDocRef.update({
+            dailyMissions: newDailyMissions,
+            weeklyMissions: newWeeklyMissions
+        });
+        await awardGoldenCarrots(missionReward, `Missão Concluída: ${missionTitle}`);
+      }
   }, [user, userProfile, awardGoldenCarrots]);
 
 
@@ -166,8 +282,8 @@ export const useGamification = (user: User | null) => {
 
   const markTipAsRead = useCallback(async (itemId: string) => {
     if (!user) return;
-    const itemDocRef = doc(db, 'users', user.uid, 'pantry', itemId);
-    await updateDoc(itemDocRef, { tipRead: true });
+    const itemDocRef = db.collection('users').doc(user.uid).collection('pantry').doc(itemId);
+    await itemDocRef.update({ tipRead: true });
     awardXp(ACTION_XP_VALUES.READ_TIP, 'Dica do Nutri lida!');
   }, [user, awardXp]);
 

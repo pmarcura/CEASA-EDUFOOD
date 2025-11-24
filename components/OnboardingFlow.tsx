@@ -1,5 +1,5 @@
+
 import React, { useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { User, UserProfile } from '../types';
 
@@ -11,6 +11,7 @@ import PantryHabitsStep from './onboarding/PantryHabitsStep';
 import SummaryStep from './onboarding/SummaryStep';
 import ProgressBar from './onboarding/ProgressBar';
 import { LoaderCircle } from 'lucide-react';
+import { DAILY_MISSIONS, WEEKLY_MISSIONS } from '../constants/missions';
 
 interface OnboardingFlowProps {
   user: User;
@@ -37,27 +38,45 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user }) => {
 
   const handleBack = () => {
     if (step > 1) {
-      setStep(prev => prev - 1);
+      setStep(prev => prev + 1);
     }
   };
 
   const handleFinish = async (data: Partial<UserProfile> = {}) => {
     setIsLoading(true);
-    // FIX: Add missing required fields to satisfy the UserProfile type.
+    const now = Date.now();
+    
+    // Get 2 unique daily missions
+    const dailyMissionsCopy = [...DAILY_MISSIONS];
+    const initialDailyMissions = [
+        dailyMissionsCopy.splice(Math.floor(Math.random() * dailyMissionsCopy.length), 1)[0],
+        dailyMissionsCopy.splice(Math.floor(Math.random() * dailyMissionsCopy.length), 1)[0]
+    ].map(mission => ({ id: mission.id, completed: false, lastReset: now }));
+    
+    // Get 2 unique weekly missions
+    const weeklyMissionsCopy = [...WEEKLY_MISSIONS];
+    const initialWeeklyMissions = [
+        weeklyMissionsCopy.splice(Math.floor(Math.random() * weeklyMissionsCopy.length), 1)[0],
+        weeklyMissionsCopy.splice(Math.floor(Math.random() * weeklyMissionsCopy.length), 1)[0]
+    ].map(mission => ({ id: mission.id, completed: false, lastReset: now }));
+
+    // FIX: Initialize required 'streak' and 'lastLogin' fields for the new user profile.
     const finalProfile: UserProfile = {
       ...profileData,
       ...data,
       onboardingCompleted: true,
-      xp: 0, // Initialize XP
-      level: 1, // Initialize level
+      xp: 0,
+      level: 1,
       goldenCarrots: 0,
-      dailyMission: { id: 'add-in-natura-2', completed: true, lastReset: 0 },
-      weeklyMission: { id: 'cook-recipes-3', completed: true, lastReset: 0 },
+      dailyMissions: initialDailyMissions,
+      weeklyMissions: initialWeeklyMissions,
+      streak: 1,
+      lastLogin: now,
     };
     
     try {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, finalProfile, { merge: true });
+        const userDocRef = db.collection('users').doc(user.uid);
+        await userDocRef.set(finalProfile, { merge: true });
         // The App component will detect the change and switch views.
     } catch (error) {
         console.error("Error saving user profile:", error);

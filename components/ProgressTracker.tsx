@@ -1,50 +1,57 @@
+
 import React, { useContext, useState, useEffect } from 'react';
 import { AppContext } from '../contexts/AppContext';
-import { ALL_MISSIONS, ACHIEVEMENTS } from '../constants/missions';
-import { Target, Medal, Check, Carrot, Trophy, Clock } from 'lucide-react';
+import { ALL_MISSIONS, ACHIEVEMENTS, DAILY_MISSIONS, WEEKLY_MISSIONS } from '../constants/missions';
+import type { Mission, MissionProgress } from '../types';
+import { Target, Medal, Check, Carrot, Trophy, Clock, Gift } from 'lucide-react';
 import LeaderboardModal from './modals/LeaderboardModal';
 
 const formatTimeLeft = (ms: number) => {
-    if (ms <= 0) return 'Esgotado';
+    if (ms <= 0) return 'Terminou';
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
+    
+    if (hours > 23) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      return `${days}d ${remainingHours}h`;
+    }
     if (hours > 0) {
         return `${hours}h ${minutes}m`;
     }
     if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
+        return `${minutes}m ${Math.floor(totalSeconds % 60)}s`;
     }
-    return `${seconds}s`;
+    return `${Math.floor(totalSeconds % 60)}s`;
 };
 
 
-const MissionCard: React.FC<{ type: 'daily' | 'weekly' }> = ({ type }) => {
+interface MissionCardProps {
+    missionProgress: MissionProgress;
+    missionDef: Mission;
+}
+
+const MissionCard: React.FC<MissionCardProps> = ({ missionProgress, missionDef }) => {
     const context = useContext(AppContext);
     const [timeLeft, setTimeLeft] = useState('');
 
-    if (!context || !context.userProfile) return null;
-
-    const missionProgress = type === 'daily' ? context.userProfile.dailyMission : context.userProfile.weeklyMission;
-    const missionDef = ALL_MISSIONS.find(m => m.id === missionProgress.id);
+    const isCompleted = missionProgress.completed;
 
     useEffect(() => {
-        if (!missionDef) return;
+        if (isCompleted) return;
 
         const calculateTimeLeft = () => {
             const now = new Date();
             let endDate: Date;
 
             if (missionDef.type === 'daily') {
-                endDate = new Date();
+                endDate = new Date(missionProgress.lastReset);
                 endDate.setHours(23, 59, 59, 999);
             } else { // weekly
-                endDate = new Date();
-                const dayOfWeek = endDate.getDay(); // Sunday = 0, Saturday = 6
-                // Week ends on Saturday night
-                const daysUntilSaturday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+                endDate = new Date(missionProgress.lastReset);
+                const dayOfWeek = endDate.getDay(); // Sunday = 0
+                const daysUntilSaturday = dayOfWeek === 0 ? 6 : 6 - dayOfWeek;
                 endDate.setDate(endDate.getDate() + daysUntilSaturday);
                 endDate.setHours(23, 59, 59, 999);
             }
@@ -57,19 +64,18 @@ const MissionCard: React.FC<{ type: 'daily' | 'weekly' }> = ({ type }) => {
         const interval = setInterval(calculateTimeLeft, 1000);
 
         return () => clearInterval(interval);
-    }, [missionDef]);
+    }, [missionDef, isCompleted, missionProgress.lastReset]);
 
 
-    if (!missionDef) return <p>Carregando missão...</p>;
+    if (!context) return null;
 
     const progress = missionDef.getCurrentProgress(context);
     const percentage = Math.min((progress / missionDef.goal) * 100, 100);
-    const isCompleted = missionProgress.completed;
     const canClaim = percentage >= 100 && !isCompleted;
 
     const handleClaim = () => {
         if (canClaim) {
-            context.claimMissionReward(type);
+            context.claimMissionReward(missionDef.id);
         }
     };
     
@@ -122,25 +128,68 @@ const ProgressTracker: React.FC = () => {
     const context = useContext(AppContext);
     const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
 
-    if (!context) return null;
+    if (!context || !context.userProfile) return null;
+
+    const { userProfile } = context;
+    const { dailyMissions, weeklyMissions, goldenCarrots } = userProfile;
+    
+    const findMissionDef = (id: string, type: 'daily' | 'weekly') => {
+        const source = type === 'daily' ? DAILY_MISSIONS : WEEKLY_MISSIONS;
+        return source.find(m => m.id === id);
+    };
+
+    const nextCouponCost = 150; // Example cost
+    const carrotsForNextCoupon = Math.max(0, nextCouponCost - goldenCarrots);
+    const couponProgress = Math.min((goldenCarrots / nextCouponCost) * 100, 100);
 
     return (
         <div className="space-y-8">
             <div>
                 <h2 className="text-3xl font-bold text-brand-text">Sua Jornada Saudável</h2>
-                <p className="text-brand-text-secondary">Acompanhe suas missões e conquistas!</p>
+                <p className="text-brand-text-secondary">Conquiste recompensas e acompanhe seu progresso!</p>
             </div>
             
+            <div className="bg-brand-surface p-4 rounded-2xl shadow-edu">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-semibold text-brand-text mb-1 flex items-center">
+                        <Carrot className="mr-2 text-orange-500" /> Cenouras Douradas
+                    </h3>
+                    <span className="text-2xl font-bold text-orange-500">{goldenCarrots}</span>
+                </div>
+                 <div className="w-full bg-orange-100 rounded-full h-3 overflow-hidden my-2">
+                    <div className="bg-gradient-to-r from-orange-300 to-orange-500 h-full rounded-full transition-all duration-500" style={{width: `${couponProgress}%`}}></div>
+                </div>
+                <p className="text-xs text-center text-brand-text-secondary font-semibold">
+                    {carrotsForNextCoupon > 0 ? `Faltam ${carrotsForNextCoupon} cenouras para o próximo cupom!` : "Você pode resgatar um cupom!"}
+                </p>
+                <button 
+                    // onClick={() => ...} // This will open the new Rewards Modal
+                    className="w-full mt-3 flex items-center justify-center gap-2 bg-yellow-400 text-yellow-900 font-bold py-2.5 px-4 rounded-lg transition-colors hover:bg-yellow-500"
+                >
+                    <Gift size={18}/> Resgatar Cupons
+                </button>
+            </div>
+
             <div>
-                <h3 className="text-xl font-semibold text-brand-text mb-3 flex items-center"><Target className="mr-3 text-brand-primary"/> Missões</h3>
+                <h3 className="text-xl font-semibold text-brand-text mb-3 flex items-center"><Target className="mr-3 text-brand-primary"/> Como Ganhar Cenouras</h3>
                 <div className="space-y-4">
                     <div>
-                        <p className="font-semibold text-brand-text-secondary text-sm mb-1">Diária</p>
-                        <MissionCard type="daily" />
+                        <p className="font-semibold text-brand-text-secondary text-sm mb-2">Missões Diárias</p>
+                        <div className="space-y-3">
+                            {dailyMissions.map(mProg => {
+                                const mDef = findMissionDef(mProg.id, 'daily');
+                                return mDef ? <MissionCard key={mProg.id} missionProgress={mProg} missionDef={mDef} /> : null;
+                            })}
+                        </div>
                     </div>
                     <div>
-                        <p className="font-semibold text-brand-text-secondary text-sm mb-1">Semanal</p>
-                        <MissionCard type="weekly" />
+                        <p className="font-semibold text-brand-text-secondary text-sm mt-4 mb-2">Missões Semanais</p>
+                         <div className="space-y-3">
+                            {weeklyMissions.map(mProg => {
+                                const mDef = findMissionDef(mProg.id, 'weekly');
+                                return mDef ? <MissionCard key={mProg.id} missionProgress={mProg} missionDef={mDef} /> : null;
+                            })}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -150,7 +199,7 @@ const ProgressTracker: React.FC = () => {
                     <h3 className="text-xl font-semibold text-brand-text flex items-center"><Medal className="mr-3 text-brand-primary"/> Conquistas</h3>
                     <button 
                         onClick={() => setIsLeaderboardOpen(true)}
-                        className="flex items-center gap-1.5 bg-yellow-400 text-yellow-900 font-bold py-1.5 px-3 rounded-full text-sm hover:opacity-90 transition-opacity"
+                        className="flex items-center gap-1.5 bg-gray-100 text-brand-text-secondary font-bold py-1.5 px-3 rounded-full text-sm hover:bg-gray-200 transition-opacity"
                     >
                         <Trophy size={14} />
                         Leaderboard

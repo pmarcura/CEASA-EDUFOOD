@@ -1,7 +1,7 @@
 
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import firebase from "firebase/compat/app";
+import "firebase/compat/auth";
+import "firebase/compat/firestore";
 
 /*
 ████████╗██╗░░██╗██████╗░███████╗██████╗░░█████╗░████████╗███████╗
@@ -58,9 +58,10 @@ if (isConfigPlaceholder) {
 }
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
 
 // Export modular services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const provider = new GoogleAuthProvider();
+export const auth = app.auth();
+export const db = app.firestore();
+export const provider = new firebase.auth.GoogleAuthProvider();
+export const increment = firebase.firestore.FieldValue.increment;

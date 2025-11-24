@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import type { UserProfile, Child, FoodSelectivityLevel } from '../../types';
+import type { UserProfile, Child, FoodSelectivityLevel, ReligiousDiet } from '../../types';
 import { Plus, X, ArrowLeft, ArrowRight, Smile, Meh, Frown } from 'lucide-react';
+import { RELIGIOUS_DIETS_OPTIONS } from '../../constants/foodRestrictions';
 
 interface ChildDetailsStepProps {
   onNext: (data: Partial<UserProfile>) => void;
@@ -11,9 +12,11 @@ interface ChildDetailsStepProps {
 const defaultChild: Omit<Child, 'id'> = {
   name: '',
   age: 5,
-  restrictions: { religious: false, psychological: false, autism: false },
+  restrictions: { psychological: false, autism: false },
+  religiousDiets: [],
+  otherReligiousDiet: '',
   medicalConditions: '',
-  foodSelectivity: 'medium',
+  foodSelectivity: { level: 'medium', context: '' },
   dislikedFoods: ''
 };
 
@@ -42,14 +45,36 @@ const ChildDetailsStep: React.FC<ChildDetailsStepProps> = ({ onNext, onBack, dat
     setChildren(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleUpdateChild = (id: string, field: keyof Child, value: any) => {
-    setChildren(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+  const handleUpdateChild = (id: string, updates: Partial<Child>) => {
+    setChildren(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   };
   
   const handleUpdateRestriction = (id: string, key: keyof Child['restrictions'], value: boolean) => {
     setChildren(prev => prev.map(c => {
         if (c.id === id) {
             return { ...c, restrictions: { ...c.restrictions, [key]: value } };
+        }
+        return c;
+    }));
+  };
+
+  const handleUpdateFoodSelectivity = (id: string, field: 'level' | 'context', value: string) => {
+    setChildren(prev => prev.map(c => {
+        if (c.id === id) {
+            return { ...c, foodSelectivity: { ...c.foodSelectivity, [field]: value } };
+        }
+        return c;
+    }));
+  };
+  
+  const handleToggleReligiousDiet = (id: string, diet: ReligiousDiet | 'other') => {
+    setChildren(prev => prev.map(c => {
+        if (c.id === id) {
+            const currentDiets = c.religiousDiets || [];
+            const newDiets = currentDiets.includes(diet)
+                ? currentDiets.filter(d => d !== diet)
+                : [...currentDiets, diet];
+            return { ...c, religiousDiets: newDiets };
         }
         return c;
     }));
@@ -85,40 +110,50 @@ const ChildDetailsStep: React.FC<ChildDetailsStepProps> = ({ onNext, onBack, dat
                     <div className="grid grid-cols-3 gap-3 mb-4">
                         <div className="col-span-2">
                              <label className="text-xs font-semibold text-brand-text-secondary">Nome</label>
-                             <input type="text" placeholder="Ex: João" value={child.name} onChange={e => handleUpdateChild(child.id, 'name', e.target.value)} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
+                             <input type="text" placeholder="Ex: João" value={child.name} onChange={e => handleUpdateChild(child.id, { name: e.target.value })} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
                         </div>
                          <div>
                              <label className="text-xs font-semibold text-brand-text-secondary">Idade</label>
-                            <input type="number" placeholder="5" value={child.age || ''} onChange={e => handleUpdateChild(child.id, 'age', parseInt(e.target.value) || 0)} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
+                            <input type="number" placeholder="5" value={child.age || ''} onChange={e => handleUpdateChild(child.id, { age: parseInt(e.target.value) || 0 })} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
                         </div>
                     </div>
                     
                     <div className="space-y-3">
                         <p className="text-sm font-semibold text-brand-text-secondary">Restrições e Condições</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <CheckboxWithLabel label="Religiosa" checked={child.restrictions.religious} onChange={v => handleUpdateRestriction(child.id, 'religious', v)} />
-                            <CheckboxWithLabel label="Comportamental" checked={child.restrictions.psychological} onChange={v => handleUpdateRestriction(child.id, 'psychological', v)} />
-                            <CheckboxWithLabel label="Relacionada a Autismo" checked={child.restrictions.autism} onChange={v => handleUpdateRestriction(child.id, 'autism', v)} />
+                           <CheckboxWithLabel label="Comportamental" checked={child.restrictions.psychological} onChange={v => handleUpdateRestriction(child.id, 'psychological', v)} />
+                           <CheckboxWithLabel label="Relacionada a Autismo" checked={child.restrictions.autism} onChange={v => handleUpdateRestriction(child.id, 'autism', v)} />
                         </div>
-                        <textarea placeholder="Alguma alergia, intolerância ou outra condição médica? (ex: alergia a amendoim, intolerância a lactose)" value={child.medicalConditions} onChange={e => handleUpdateChild(child.id, 'medicalConditions', e.target.value)} rows={2} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
+                        <div className="space-y-2">
+                          {RELIGIOUS_DIETS_OPTIONS.map(diet => (
+                            <CheckboxWithLabel key={diet.id} label={diet.label} checked={child.religiousDiets?.includes(diet.id) ?? false} onChange={() => handleToggleReligiousDiet(child.id, diet.id)} />
+                          ))}
+                           <CheckboxWithLabel label="Outra" checked={child.religiousDiets?.includes('other') ?? false} onChange={() => handleToggleReligiousDiet(child.id, 'other')} />
+                           {child.religiousDiets?.includes('other') && (
+                             <input type="text" placeholder="Descreva a restrição" value={child.otherReligiousDiet} onChange={e => handleUpdateChild(child.id, { otherReligiousDiet: e.target.value })} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
+                           )}
+                        </div>
+
+                        <textarea placeholder="Alguma alergia, intolerância ou outra condição médica? (ex: alergia a amendoim, intolerância a lactose)" value={child.medicalConditions} onChange={e => handleUpdateChild(child.id, { medicalConditions: e.target.value })} rows={2} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
 
                         <p className="text-sm font-semibold text-brand-text-secondary pt-2">Seletividade Alimentar</p>
                         <div className="flex justify-around bg-brand-background p-1 rounded-full border border-brand-border">
                             {(['low', 'medium', 'high'] as FoodSelectivityLevel[]).map(level => {
-                                const isSelected = child.foodSelectivity === level;
+                                const isSelected = child.foodSelectivity.level === level;
                                 const labels = { low: 'Baixa', medium: 'Média', high: 'Alta' };
                                 const icons = { low: Smile, medium: Meh, high: Frown };
                                 const Icon = icons[level];
                                 return (
-                                    <button key={level} onClick={() => handleUpdateChild(child.id, 'foodSelectivity', level)} className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-1.5 px-2 rounded-full transition-colors ${isSelected ? 'bg-brand-primary text-white shadow' : 'text-brand-text-secondary hover:bg-gray-200'}`}>
+                                    <button key={level} onClick={() => handleUpdateFoodSelectivity(child.id, 'level', level)} className={`w-full flex items-center justify-center gap-2 text-sm font-semibold py-1.5 px-2 rounded-full transition-colors ${isSelected ? 'bg-brand-primary text-white shadow' : 'text-brand-text-secondary hover:bg-gray-200'}`}>
                                        <Icon size={16}/> <span>{labels[level]}</span>
                                     </button>
                                 );
                             })}
                         </div>
+                         <textarea placeholder="Dê mais contexto sobre a seletividade (opcional). Ex: não gosta de molhos, prefere comida seca." value={child.foodSelectivity.context} onChange={e => handleUpdateFoodSelectivity(child.id, 'context', e.target.value)} rows={2} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
 
                          <p className="text-sm font-semibold text-brand-text-secondary pt-2">Alimentos que não gosta de jeito nenhum</p>
-                         <textarea placeholder="Liste os alimentos separados por vírgula (ex: jiló, fígado, abacate)" value={child.dislikedFoods} onChange={e => handleUpdateChild(child.id, 'dislikedFoods', e.target.value)} rows={2} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
+                         <textarea placeholder="Liste os alimentos separados por vírgula (ex: jiló, fígado, abacate)" value={child.dislikedFoods} onChange={e => handleUpdateChild(child.id, { dislikedFoods: e.target.value })} rows={2} className="w-full mt-1 p-2 border border-brand-border rounded-lg text-sm"/>
                     </div>
 
                 </div>

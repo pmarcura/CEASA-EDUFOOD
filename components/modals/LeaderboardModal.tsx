@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import ReactDOM from 'react-dom';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { X, LoaderCircle, Trophy, ShieldAlert } from 'lucide-react';
 import type { LeaderboardEntry } from '../../types';
@@ -28,9 +27,8 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) => {
     useEffect(() => {
         const fetchLeaderboard = async () => {
             try {
-                const usersRef = collection(db, 'users');
-                const q = query(usersRef, orderBy('xp', 'desc'), limit(20));
-                const querySnapshot = await getDocs(q);
+                const usersRef = db.collection('users');
+                const querySnapshot = await usersRef.orderBy('xp', 'desc').limit(20).get();
                 
                 const data = querySnapshot.docs.map(doc => ({
                     uid: doc.id,

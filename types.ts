@@ -1,8 +1,9 @@
+
 import type { ElementType } from 'react';
-import type { User } from 'firebase/auth';
+import firebase from 'firebase/compat/app';
 import type { useGamification } from './hooks/useGamification';
 
-export type { User };
+export type User = firebase.User;
 export type NovaClassificationKey = 'in_natura' | 'culinary_ingredients' | 'processed' | 'ultra_processed';
 export type RiskLevel = 'Baixo' | 'Médio' | 'Alto';
 export type Tab = 'home' | 'chat' | 'pantry' | 'progress' | 'feed';
@@ -18,18 +19,24 @@ export type CookingResponsibility = 'self' | 'shared' | 'delivery';
 export type PantryManagementHabit = 'organized' | 'tries' | 'chaotic';
 export type FamilyGoal = 'eat_healthier' | 'organize_time' | 'reduce_waste' | 'kids_eat_better' | 'plan_menus';
 export type FoodSelectivityLevel = 'low' | 'medium' | 'high';
+export type ReligiousDiet = 'halal' | 'kosher';
+
 
 export interface Child {
   id: string;
   name: string;
   age: number;
   restrictions: {
-    religious: boolean;
     psychological: boolean;
     autism: boolean;
   };
+  religiousDiets?: (ReligiousDiet | 'other')[];
+  otherReligiousDiet?: string;
   medicalConditions: string;
-  foodSelectivity: FoodSelectivityLevel;
+  foodSelectivity: {
+    level: FoodSelectivityLevel;
+    context?: string;
+  };
   dislikedFoods: string;
 }
 
@@ -41,6 +48,7 @@ export interface MissionProgress {
 
 export interface UserProfile {
   onboardingCompleted: boolean;
+  displayName?: string; // Family Name
   cookingResponsibility?: CookingResponsibility;
   cookingFrequency?: number;
   familyMembers?: number; // Will be deprecated in favor of adultsCount + children.length
@@ -52,8 +60,14 @@ export interface UserProfile {
   xp: number;
   level: number;
   goldenCarrots: number;
-  dailyMission: MissionProgress;
-  weeklyMission: MissionProgress;
+  dailyMissions: MissionProgress[];
+  weeklyMissions: MissionProgress[];
+  streak: number;
+  lastLogin: number;
+  lastPantryReview?: number;
+  // Deprecated fields for migration
+  dailyMission?: MissionProgress;
+  weeklyMission?: MissionProgress;
 }
 
 export interface UserDocument extends UserProfile {
@@ -81,6 +95,7 @@ export interface PantryItem {
   nutritionalInfo: NutritionalInfo;
   tags: string[];
   tipRead?: boolean;
+  addedAt?: number;
 }
 export interface RecipeIngredient {
   name: string;
@@ -117,16 +132,18 @@ export interface Recipe {
   steps: RecipeStep[];
   presentation_suggestion?: string;
   storage: string;
+  pantryStatus?: 'complete' | 'partial' | 'missing';
+  missingItems?: string[];
 }
 
 export interface MealLogEntry {
     id: string;
     recipeTitle: string;
     timestamp: number;
-    feedbackRating: number;
+    feedbackRating?: number;
     feedbackText?: string;
     feedbackImage?: string | null;
-    serves: string;
+    serves?: string;
     foodGroupPortions?: {
         proteins: number;
         grains: number;
@@ -138,6 +155,7 @@ export interface MealLogEntry {
         processed: number;
         ultra_processed: number;
     };
+    recipe?: Recipe;
 }
 
 export interface AnalysisState {
@@ -207,6 +225,7 @@ export interface Comment {
   timestamp: number;
 }
 
+export type SuccessTag = 'hidden_veggies' | 'fun_story' | 'texture_win' | 'first_time' | 'lunchbox';
 
 export interface FeedPost {
   id: string;
@@ -219,6 +238,7 @@ export interface FeedPost {
   timestamp: number;
   recipe?: Recipe;
   comments?: Comment[];
+  successType?: SuccessTag; // New field for parenting wins
 }
 
 export interface XpNoticeInfo {
@@ -242,11 +262,79 @@ export interface LeaderboardEntry {
     xp: number;
 }
 
+// Meal Planner Types
+export type MealPlanFocus = 'use_pantry' | 'quick_recipes' | 'healthy_eating';
+export type MealType = 'breakfast' | 'lunch' | 'dinner';
+
+export interface MealPlanRequest {
+  meals: MealType[];
+  focus: MealPlanFocus;
+  nightsToCook?: number;
+  busyDays?: string[];
+  priority?: 'use_pantry' | 'healthy' | 'new_foods' | 'economy';
+  specificIngredients?: string[];
+  avoidItems?: string[];
+}
+
+export interface PlannedMeal {
+  dayOfWeek: 'Segunda-feira' | 'Terça-feira' | 'Quarta-feira' | 'Quinta-feira' | 'Sexta-feira' | 'Sábado' | 'Domingo';
+  mealType: MealType;
+  recipe: Recipe;
+}
+
+export interface ShoppingListItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  novaClassification: NovaClassificationKey;
+  fromRecipes: string[];
+  isBought: boolean;
+}
+
+export interface ShoppingListCategory {
+  name: string;
+  items: ShoppingListItem[];
+}
+
+export interface Coupon {
+  id: string;
+  title: string;
+  partner: string;
+  cost: number;
+  validityDays: number;
+  description: string;
+  howToUse: string;
+  rules: string;
+  category: 'Hortifruti' | 'Produtos saudáveis' | 'Orgânicos' | 'Mercados';
+}
+
+export interface RedeemedCoupon {
+  coupon: Coupon;
+  code: string;
+  qrCodeUrl: string;
+  redeemedAt: number;
+  expiresAt: number;
+  status: 'active' | 'used' | 'expired';
+}
+
+// Pantry Review Types
+export type PantryReviewAction = 'update' | 'remove' | 'keep';
+
+export interface PantryReviewChange {
+    itemId: string;
+    action: PantryReviewAction;
+    newQuantity?: number;
+    newUnit?: string;
+    originalItem: PantryItem;
+}
 
 type GamificationContextType = ReturnType<typeof useGamification>;
 
 export interface AppContextType extends GamificationContextType {
   user: User | null;
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  updateUserAvatar: (photoURL: string) => Promise<void>;
   logout: () => void;
   pantry: PantryItem[];
   addItemsToPantry: (items: Omit<PantryItem, 'id'>[]) => Promise<void>;
@@ -254,6 +342,7 @@ export interface AppContextType extends GamificationContextType {
   removeItemsFromPantry: (itemIds: string[]) => Promise<void>;
   updatePantryItemQuantity: (itemId: string, newQuantity: number) => Promise<void>;
   updatePantryItemDetails: (itemId: string, updates: Partial<Omit<PantryItem, 'id'>>) => Promise<void>;
+  completePantryReview: (changes: PantryReviewChange[]) => Promise<void>;
   savedRecipes: Recipe[];
   saveRecipe: (recipe: Recipe) => Promise<void>;
   chatHistory: ChatMessage[];
@@ -271,6 +360,16 @@ export interface AppContextType extends GamificationContextType {
   setCookingRecipe: (recipe: Recipe | null) => void;
   mealLog: MealLogEntry[];
   logMealCompletion: (recipe: Recipe, feedback: MealFeedback) => Promise<void>;
+  addMealLogEntry: (entry: Omit<MealLogEntry, 'id'>) => Promise<void>;
+  updateMealLogEntry: (entryId: string, updates: Partial<Omit<MealLogEntry, 'id'>>) => Promise<void>;
+  deleteMealLogEntry: (entryId: string) => Promise<void>;
   swaps: Swap[];
   isSwapsLoading: boolean;
+  isViewingProfile: boolean;
+  setIsViewingProfile: (isViewing: boolean) => void;
+  isMealPlannerOpen: boolean;
+  setIsMealPlannerOpen: (isOpen: boolean) => void;
+  upcomingMeal: MealLogEntry | null;
+  isPantryReviewOpen: boolean;
+  setIsPantryReviewOpen: (isOpen: boolean) => void;
 }

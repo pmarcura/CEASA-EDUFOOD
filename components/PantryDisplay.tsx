@@ -3,11 +3,12 @@ import React, { useContext, useState, useMemo, useCallback } from 'react';
 import { AppContext } from '../../contexts/AppContext';
 import PantryItemCard from './PantryItemCard';
 import PantryListItem from './PantryListItem';
-import { Search, LayoutGrid, List, Trash2, Filter, PlusCircle, MinusCircle, Carrot, Sandwich, Cookie, Sparkles } from 'lucide-react';
+import { Search, LayoutGrid, List, Trash2, Filter, PlusCircle, MinusCircle, Carrot, Sandwich, Cookie, Sparkles, Plus } from 'lucide-react';
 import type { NovaClassificationKey, PantryItem } from '../../types';
 import { enrichFoodItemsBatch } from '../../services/geminiService';
 import { ACTION_XP_VALUES } from '../../services/gamificationService';
 import PantryFilterModal from './modals/PantryFilterModal';
+import AddItemModal from './modals/AddItemModal';
 import { NOVA_CLASSIFICATION } from '../../constants/foodClassifications';
 
 const novaFilters: {
@@ -34,6 +35,7 @@ const PantryDisplay: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
     const [isNovaInfoExpanded, setIsNovaInfoExpanded] = useState(false);
+    const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
     
     // Interaction States
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -151,19 +153,6 @@ const PantryDisplay: React.FC = () => {
         setEditingItemId(null);
     };
 
-    if (pantry.length === 0 && !context) {
-        return <p>Carregando despensa...</p>;
-    }
-
-    if (pantry.length === 0) {
-        return (
-            <div className="text-center text-brand-text-secondary mt-10">
-                <h2 className="text-xl font-bold text-brand-text mb-2">Sua despensa está vazia!</h2>
-                <p>Use a aba 'Chat' para adicionar sua primeira lista de compras.</p>
-            </div>
-        );
-    }
-    
     const activeFilterCount = (selectedNova !== 'all' ? 1 : 0) + (selectedCodex !== 'all' ? 1 : 0);
     
     const clearFilters = () => {
@@ -173,7 +162,7 @@ const PantryDisplay: React.FC = () => {
     };
 
     return (
-        <div className="pb-24">
+        <div className="pb-24 relative min-h-[80vh]">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-brand-text">Despensa</h2>
                  <button onClick={handleToggleSelectionMode} className="text-sm font-semibold text-brand-primary">
@@ -275,9 +264,10 @@ const PantryDisplay: React.FC = () => {
                 )
             ) : (
                 <div className="text-center text-brand-text-secondary mt-10 p-6 bg-brand-surface rounded-xl">
-                    <h3 className="text-lg font-bold text-brand-text mb-1">Nenhum item encontrado</h3>
-                    <p className="text-sm">Tente ajustar seus filtros ou adicione mais itens à sua despensa.</p>
-
+                    <h3 className="text-lg font-bold text-brand-text mb-1">
+                        {pantry.length === 0 ? "Sua despensa está vazia!" : "Nenhum item encontrado"}
+                    </h3>
+                    <p className="text-sm">{pantry.length === 0 ? "Comece adicionando itens manualmente." : "Tente ajustar seus filtros."}</p>
                 </div>
             )}
 
@@ -290,6 +280,17 @@ const PantryDisplay: React.FC = () => {
                 </div>
             )}
             
+            {/* FAB for Manual Add */}
+            {!isSelectionMode && (
+                <button
+                    onClick={() => setIsAddItemModalOpen(true)}
+                    className="fixed bottom-24 right-4 w-14 h-14 bg-brand-primary rounded-full flex items-center justify-center text-white shadow-lg shadow-brand-primary/30 transform hover:scale-110 transition-all hover:bg-brand-dark z-30"
+                    aria-label="Adicionar item manualmente"
+                >
+                    <Plus size={28} strokeWidth={2.5} />
+                </button>
+            )}
+
              <PantryFilterModal
                 isOpen={isFilterModalOpen}
                 onClose={() => setIsFilterModalOpen(false)}
@@ -300,6 +301,8 @@ const PantryDisplay: React.FC = () => {
                 availableCodexCategories={availableCodexCategories}
                 onClearFilters={clearFilters}
             />
+            
+            {isAddItemModalOpen && <AddItemModal onClose={() => setIsAddItemModalOpen(false)} />}
         </div>
     );
 };

@@ -1,22 +1,38 @@
 
 import React, { useState, useContext, useRef, useEffect, useCallback } from 'react';
-import { Send, LoaderCircle, Camera, ArrowUp } from 'lucide-react';
+import { Send, LoaderCircle, Camera, ArrowUp, ImagePlus, X } from 'lucide-react';
 import { AppContext } from '../../contexts/AppContext';
-import { processShoppingList, enrichFoodItemsBatch, generateConversationalRecipes, processReceiptImage } from '../../services/geminiService';
+import { processShoppingList, enrichFoodItemsBatch, generateConversationalRecipes, processReceiptImage, ImagePayload, EnrichedData } from '../../services/geminiService';
 import type { PantryItem, AnalysisState, VerifiedItem } from '../../types';
 import RecipeCard from './RecipeCard';
 import AnalysisProgressCard from './AnalysisProgressCard';
 import ItemVerificationCard from './ItemVerificationCard';
+import { toTitleCase } from '../../utils/formatters';
 
-const fileToDataURL = (file: File): Promise<string> => {
+const fileToDataURL = (file: File): Promise<ImagePayload> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                const base64Data = reader.result.split(',')[1];
+                resolve({ data: base64Data, mimeType: file.type });
+            } else {
+                reject(new Error("Failed to read file"));
+            }
+        };
         reader.onerror = error => reject(error);
     });
 };
 
+// Helper to split array into chunks
+const chunkArray = <T,>(array: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+        chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+};
 
 const ProfessorNutriChat: React.FC = () => {
     const context = useContext(AppContext);
@@ -33,103 +49,192 @@ const ProfessorNutriChat: React.FC = () => {
      useEffect(() => {
         const textarea = textareaRef.current;
         if (textarea) {
-            textarea.style.height = 'auto'; // Reset height to recalculate
+            textarea.style.height = 'auto'; 
             const scrollHeight = textarea.scrollHeight;
             textarea.style.height = `${scrollHeight}px`;
         }
     }, [userInput]);
 
-
     if (!context) return null;
     const { 
         pantry, addItemsToPantry, addMessageToChat, chatHistory, 
         clearChatQuickReplies, updateMessage, setViewingRecipe,
-        awardXpForNewItem
+        awardXpForNewItem, userProfile, mealLog, feedPosts
     } = context;
     
     const startEnrichmentProcess = useCallback(async (itemsToProcess: {name: string, quantity: number, unit: string, isFood: boolean}[]) => {
+         // 1. Create the message container for the progress card
          const analysisMessageId = addMessageToChat({ 
             role: 'model', 
-            analysis: { status: 'enriching', progress: 5, totalItems: itemsToProcess.length, processedItems: [] }
+            analysis: { status: 'enriching', progress: 0, totalItems: itemsToProcess.length, processedItems: [] }
         });
 
-        const findMessage = (id: string) => context.chatHistory.find(m => m.id === id);
-
-        const updateAnalysis = (id: string, update: Partial<AnalysisState>) => {
-            const currentMsg = findMessage(id);
-            if (currentMsg?.analysis) {
-                const newAnalysisState = {
-                    ...currentMsg.analysis,
-                    ...update,
-                    processedItems: update.processedItems || currentMsg.analysis.processedItems,
-                };
-                updateMessage(id, { analysis: newAnalysisState });
-            }
+        // Helper to update the specific message UI
+        const updateAnalysis = (update: Partial<AnalysisState>) => {
+            updateMessage(analysisMessageId, { 
+                analysis: { 
+                    status: update.status || 'enriching', 
+                    progress: update.progress || 0, 
+                    totalItems: itemsToProcess.length, 
+                    processedItems: update.processedItems || [] 
+                } 
+            });
         };
 
-        const initialProcessedItems: AnalysisState['processedItems'] = itemsToProcess.map(p => ({ 
-            name: p.name, 
-            status: p.isFood ? 'pending' : 'skipped', 
-            isFood: p.isFood 
-        }));
-        updateAnalysis(analysisMessageId, { processedItems: initialProcessedItems });
-
+        // Filter already at start based on user selection, but double check with enrichment later
         const foodItemsToEnrich = itemsToProcess.filter(item => item.isFood);
-        const foodItemNames = foodItemsToEnrich.map(item => item.name);
         
-        const enrichedData = await enrichFoodItemsBatch(foodItemNames);
-        updateAnalysis(analysisMessageId, { progress: 50 });
+        // BATCH PROCESSING CONFIG
+        const CHUNK_SIZE = 8; 
+        const chunks = chunkArray(foodItemsToEnrich, CHUNK_SIZE);
+        
+        let processedCount = 0;
+        let skippedCount = itemsToProcess.length - foodItemsToEnrich.length;
+        const allNewPantryItems: Omit<PantryItem, 'id'>[] = [];
 
-        const newPantryItems: Omit<PantryItem, 'id'>[] = [];
-        let finalProcessedItems = [...initialProcessedItems];
-        const enrichedMap = new Map(enrichedData.map(e => [e.name.toLowerCase(), e]));
+        // Process chunks sequentially
+        try {
+            for (const chunk of chunks) {
+                const chunkNames = chunk.map(item => item.name);
+                
+                try {
+                    // Call AI
+                    const enrichedDataChunk = await enrichFoodItemsBatch(chunkNames);
+                    
+                    // Match logic
+                    if (Array.isArray(enrichedDataChunk)) {
+                        chunk.forEach(item => {
+                            // Try exact match first, then fallback to finding by inclusion
+                            // SAFEGUARD: Guard against undefined 'name' from AI response or item input
+                            let enriched = enrichedDataChunk.find(e => 
+                                (e?.name && item?.name) && (
+                                    e.name.toLowerCase() === item.name.toLowerCase() || 
+                                    item.name.toLowerCase().includes(e.name.toLowerCase())
+                                )
+                            );
+                            
+                            if (enriched) {
+                                // SECONDARY SAFETY CHECK: If AI determines it's NON_FOOD, skip it
+                                if (enriched.codexCategory === 'NON_FOOD') {
+                                    skippedCount++;
+                                    return;
+                                }
 
-        foodItemsToEnrich.forEach(item => {
-            const enriched = enrichedMap.get(item.name.toLowerCase());
-            const itemIndex = finalProcessedItems.findIndex(p => p.name === item.name);
-            if (itemIndex === -1) return;
+                                const newItem: Omit<PantryItem, 'id'> = {
+                                    name: toTitleCase(enriched.name || item.name), // Enforce Title Case
+                                    quantity: item.quantity, 
+                                    unit: item.unit, 
+                                    novaClassification: enriched.novaClassification || 'processed',
+                                    codexCategory: enriched.codexCategory || 'Outros',
+                                    ageWarningTag: enriched.ageWarningTag || '', 
+                                    riskLevel: enriched.riskLevel || 'Médio',
+                                    icon: enriched.icon || '📦', // Use AI icon or fallback
+                                    color: enriched.color || '#9CA3AF',
+                                    nutritionalInfo: enriched.nutritionalInfo || { origin: '', benefits: [], risks: [], nutritionFacts: '' },
+                                    tags: enriched.tags || [],
+                                    tipRead: false,
+                                    addedAt: Date.now(),
+                                };
+                                allNewPantryItems.push(newItem);
+                                awardXpForNewItem(newItem); 
+                            } else {
+                                // Fallback if AI didn't return data for this specific item
+                                allNewPantryItems.push({
+                                    name: toTitleCase(item.name), // Enforce Title Case
+                                    quantity: item.quantity,
+                                    unit: item.unit,
+                                    novaClassification: 'processed',
+                                    codexCategory: 'Outros',
+                                    ageWarningTag: '',
+                                    riskLevel: 'Médio',
+                                    icon: '📦',
+                                    color: '#9CA3AF',
+                                    nutritionalInfo: { origin: 'Desconhecida', benefits: [], risks: [], nutritionFacts: '' },
+                                    tags: ['Item Adicionado'],
+                                    tipRead: false,
+                                    addedAt: Date.now(),
+                                });
+                            }
+                        });
+                    } else {
+                        // If enrichedDataChunk is NOT an array (failed parsing), treat entire chunk as fallback
+                         chunk.forEach(item => {
+                             allNewPantryItems.push({
+                                name: toTitleCase(item.name), 
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                novaClassification: 'processed',
+                                codexCategory: 'Outros',
+                                ageWarningTag: '',
+                                riskLevel: 'Médio',
+                                icon: '📦',
+                                color: '#9CA3AF',
+                                nutritionalInfo: { origin: 'Manual (Erro IA)', benefits: [], risks: [], nutritionFacts: '' },
+                                tags: ['Erro na Análise'],
+                                tipRead: false,
+                                addedAt: Date.now(),
+                            });
+                        });
+                    }
 
-            if (enriched) {
-                const newItem: Omit<PantryItem, 'id'> = {
-                    name: item.name,
-                    quantity: item.quantity, 
-                    unit: item.unit, 
-                    novaClassification: enriched.novaClassification,
-                    codexCategory: enriched.codexCategory,
-                    ageWarningTag: enriched.ageWarningTag,
-                    riskLevel: enriched.riskLevel,
-                    icon: enriched.icon,
-                    color: enriched.color,
-                    nutritionalInfo: enriched.nutritionalInfo,
-                    tags: enriched.tags,
-                    tipRead: false,
-                };
-                newPantryItems.push(newItem);
-                // Award XP for each new item
-                awardXpForNewItem(newItem);
-                finalProcessedItems[itemIndex] = { ...finalProcessedItems[itemIndex], status: 'success', novaClassification: enriched.novaClassification, riskLevel: enriched.riskLevel };
-            } else {
-                finalProcessedItems[itemIndex] = { ...finalProcessedItems[itemIndex], status: 'error' };
+                } catch (chunkError) {
+                    console.error("Chunk processing error, adding as generic:", chunkError);
+                    // If chunk fails, add all as generic to avoid data loss
+                    chunk.forEach(item => {
+                         allNewPantryItems.push({
+                            name: toTitleCase(item.name), // Enforce Title Case
+                            quantity: item.quantity,
+                            unit: item.unit,
+                            novaClassification: 'processed',
+                            codexCategory: 'Outros',
+                            ageWarningTag: '',
+                            riskLevel: 'Médio',
+                            icon: '📦',
+                            color: '#9CA3AF',
+                            nutritionalInfo: { origin: 'Manual', benefits: [], risks: [], nutritionFacts: '' },
+                            tags: ['Erro na Análise'],
+                            tipRead: false,
+                            addedAt: Date.now(),
+                        });
+                    });
+                }
+
+                processedCount += chunk.length;
+                const currentProgress = Math.round((processedCount / foodItemsToEnrich.length) * 100);
+                updateAnalysis({ progress: currentProgress, status: 'enriching' });
             }
-        });
 
-        if (newPantryItems.length > 0) await addItemsToPantry(newPantryItems);
-        
-        updateAnalysis(analysisMessageId, { status: 'done', progress: 100, processedItems: finalProcessedItems });
-        
-        const nonFoodItemsFound = itemsToProcess.some(item => !item.isFood);
-        let finalMessage = 'Prontinho! Adicionei tudo na sua Despensa Inteligente.';
-        if (nonFoodItemsFound) {
-            finalMessage = 'Prontinho! Adicionei os alimentos à sua Despensa. Notei alguns itens que não são comida e os ignorei.'
+            // FINAL STEP: Add to Firestore
+            if (allNewPantryItems.length > 0) {
+                await addItemsToPantry(allNewPantryItems);
+            }
+            
+            updateAnalysis({ status: 'done', progress: 100 });
+            
+            let finalMessage = `Pronto! Adicionei ${allNewPantryItems.length} itens à sua despensa.`;
+            if (skippedCount > 0) {
+                finalMessage += ` (Ignorei ${skippedCount} itens que não pareciam comida).`;
+            }
+            
+            setTimeout(() => {
+                addMessageToChat({ 
+                    role: 'model', 
+                    text: finalMessage,
+                    quickReplies: ['Sugerir receitas', 'Ver despensa'] 
+                });
+            }, 800);
+
+        } catch (error) {
+            console.error("Fatal enrichment error:", error);
+            updateAnalysis({ status: 'error', progress: 0 });
+            addMessageToChat({ role: 'model', text: "Tive um problema ao salvar os itens. Por favor, tente novamente com uma lista menor." });
+        } finally {
+            setIsProcessing(false);
         }
-        addMessageToChat({ role: 'model', text: finalMessage });
-        
-        setTimeout(() => {
-            addMessageToChat({ role: 'model', text: 'Agora que temos ingredientes novos, que tal eu sugerir algumas receitas saudáveis?', quickReplies: ['Sim, por favor!', 'Agora não'] });
-        }, 1000);
-    }, [addItemsToPantry, addMessageToChat, updateMessage, context.chatHistory, awardXpForNewItem]);
+
+    }, [addItemsToPantry, addMessageToChat, updateMessage, awardXpForNewItem]);
     
-    const processUserMessage = useCallback(async (message: string) => {
+    const processUserMessage = useCallback(async (message: string, intentContext?: string) => {
         if (!message.trim() || isProcessing) return;
 
         addMessageToChat({ role: 'user', text: message });
@@ -137,53 +242,118 @@ const ProfessorNutriChat: React.FC = () => {
         const thinkingMessageId = addMessageToChat({ role: 'model', text: "Analisando..." });
         
         try {
-            // First, try to interpret the message as a shopping list
-            const parsedItems = await processShoppingList(message);
+            const lowerMsg = message.toLowerCase();
             
-            if (parsedItems.length > 0) {
-               // It's a shopping list, present verification card
-               presentVerificationCard(parsedItems, thinkingMessageId);
-            } else {
-               // Not a shopping list, treat as a conversational message
-               updateMessage(thinkingMessageId, { text: "Pensando em uma resposta..." });
-               
-               const pantryNames = pantry.map(item => item.name);
-               // FIX: Filter out system messages and cast the role to satisfy the function signature.
-               const historyForModel = chatHistory
-                  .filter(m => m.role === 'user' || m.role === 'model')
-                  .map(m => ({ role: m.role as 'user' | 'model', text: m.text }));
+            // --- INTENT DETECTION ---
+            
+            // 1. Intent: Add to Pantry (Keywords)
+            // Matches: "adicionar leite", "comprar pão", "põe na lista ovos", "faltou arroz"
+            const addKeywords = ['adicionar', 'comprar', 'incluir', 'lista', 'faltou', 'bota'];
+            const hasAddIntent = addKeywords.some(k => lowerMsg.includes(k));
+            
+            // 2. Intent: Suggest Recipes (Keywords)
+            // Matches: "receita", "cozinhar", "fome", "sugestão", "jantar", "almoço"
+            const recipeKeywords = ['receita', 'cozinhar', 'fome', 'sugestão', 'sugerir', 'jantar', 'almoço', 'café'];
+            const hasRecipeIntent = recipeKeywords.some(k => lowerMsg.includes(k));
 
-               const response = await generateConversationalRecipes(message, pantryNames, historyForModel);
-               
-               updateMessage(thinkingMessageId, { text: response.text, recipes: response.recipes });
+            // 3. Heuristic: Looks like a shopping list (numbers, units, or multiple lines)
+            const isLikelyList = message.includes('\n') || message.match(/\d+\s+(un|kg|g|l|ml)/i) || message.split(',').length > 2;
+            
+            // --- ACTION ROUTING ---
+
+            if ((hasAddIntent || isLikelyList) && !intentContext) {
+                // Process as Shopping List
+                const parsedItems = await processShoppingList(message);
+                if (parsedItems.length > 0) {
+                   presentVerificationCard(parsedItems, thinkingMessageId);
+                   return; // Exit function, flow continues in verification
+                } else if (hasAddIntent) {
+                    // If intent was "add" but parsing returned empty, ask for clarification
+                     updateMessage(thinkingMessageId, { text: "Entendi que você quer adicionar itens, mas não consegui identificar quais. Pode listar novamente? (Ex: '2 litros de leite')" });
+                     setIsProcessing(false);
+                     return;
+                }
             }
+            
+            // Process as Recipe Request / Chat
+            updateMessage(thinkingMessageId, { text: "Pensando em uma resposta..." });
+            
+            const pantryNames = pantry.map(item => item.name);
+            const historyForModel = chatHistory
+                .filter(m => m.role === 'user' || m.role === 'model')
+                .map(m => ({ role: m.role as 'user' | 'model', text: m.text }));
+
+            // Pass feedPosts to AI context for "Community" queries
+            const response = await generateConversationalRecipes(
+                message, 
+                pantryNames, 
+                historyForModel, 
+                userProfile, 
+                mealLog, 
+                feedPosts, // Pass Feed Context
+                intentContext || (hasRecipeIntent ? 'pantry_focus' : undefined) // Hint intent if detected
+            );
+            
+            updateMessage(thinkingMessageId, { text: response.text, recipes: response.recipes });
+            setIsProcessing(false); 
+
         } catch (error) {
             updateMessage(thinkingMessageId, { text: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-        } finally {
             setIsProcessing(false);
         }
-    }, [isProcessing, addMessageToChat, updateMessage, pantry, chatHistory]);
+    }, [isProcessing, addMessageToChat, updateMessage, pantry, chatHistory, userProfile, mealLog, feedPosts]);
 
     const handleQuickReply = (reply: string) => {
         clearChatQuickReplies();
-        // The user's reply is processed as a new conversational message
+        
+        if (reply === 'Sugerir receitas') {
+            // INTERCEPT: Don't generate immediately. Ask for specific type.
+            addMessageToChat({ role: 'user', text: reply });
+            setTimeout(() => {
+                addMessageToChat({
+                    role: 'model',
+                    text: 'Com certeza! Que tipo de sugestão você prefere hoje?',
+                    quickReplies: ['Usar meu estoque', 'Da Comunidade', 'Me surpreenda']
+                });
+            }, 500);
+            return;
+        }
+
+        if (reply === 'Usar meu estoque') {
+            processUserMessage("Sugerir receitas usando o que tenho na despensa", 'pantry_focus');
+            return;
+        }
+
+        if (reply === 'Da Comunidade') {
+            processUserMessage("Sugerir uma receita popular da comunidade", 'community_focus');
+            return;
+        }
+
+        if (reply === 'Me surpreenda') {
+            processUserMessage("Sugerir uma receita criativa e diferente", 'surprise_focus');
+            return;
+        }
+
+        // Default fallback
         processUserMessage(reply);
     };
     
     const presentVerificationCard = (parsedItems: (Partial<VerifiedItem> & { name: string, quantity: number, unit: string })[], messageId: string) => {
         const verificationItems: VerifiedItem[] = parsedItems.map(item => ({
             ...item,
+            name: toTitleCase(item.name || ''), // Preview with Title Case
             id: `${item.name}-${Math.random()}`,
-            isIncluded: item.isFood === false ? false : true,
+            isIncluded: item.isFood === false ? false : true, // Default exclusion if isFood is explicitly false
         }));
 
         updateMessage(messageId, {
-            text: "Verifique os itens que encontrei. Desmarque ou edite o que for necessário antes de adicionar à despensa.",
+            text: "Encontrei estes itens. Confirme antes de eu adicionar à despensa.",
             itemVerification: {
                 status: 'pending',
                 items: verificationItems,
             }
         });
+        setIsProcessing(false); 
     };
     
     const handleSubmit = async (e: React.FormEvent) => {
@@ -201,26 +371,40 @@ const ProfessorNutriChat: React.FC = () => {
     };
 
     const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || isProcessing) return;
+        const files = event.target.files;
+        if (!files || files.length === 0 || isProcessing) return;
 
         setIsProcessing(true);
+        const fileArray = Array.from(files);
+        
         try {
-            const imageDataUrl = await fileToDataURL(file);
-            addMessageToChat({ role: 'user', imageUrl: imageDataUrl });
+            const payloadPromises = fileArray.map(fileToDataURL);
+            const payloads = await Promise.all(payloadPromises);
+            
+            const previewUrl = `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f0f0f0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#555">${files.length} Imagens</text></svg>`)}`;
 
-            const parsingMessageId = addMessageToChat({ role: 'model', text: "Analisando sua nota fiscal..." });
+            addMessageToChat({ role: 'user', imageUrl: payloads.length === 1 ? `data:${payloads[0].mimeType};base64,${payloads[0].data}` : previewUrl, text: `Enviei ${payloads.length} fotos da nota fiscal.` });
 
-            const base64Data = imageDataUrl.split(',')[1];
-            const parsedItems = await processReceiptImage(base64Data, file.type);
+            const parsingMessageId = addMessageToChat({ 
+                role: 'model', 
+                analysis: { status: 'parsing', progress: 0, totalItems: 0, processedItems: [] } 
+            });
+
+            const parsedItems = await processReceiptImage(payloads);
             
             if (parsedItems.length === 0) {
-                 updateMessage(parsingMessageId, { text: "Não consegui encontrar itens na imagem. A foto está nítida? Tente novamente, por favor." });
+                 updateMessage(parsingMessageId, { text: "Não consegui encontrar itens nas imagens. Elas estão nítidas? Tente novamente, por favor.", analysis: undefined });
             } else {
-                presentVerificationCard(parsedItems.map(item => ({...item, isFood: true})), parsingMessageId);
+                updateMessage(parsingMessageId, { 
+                    analysis: { status: 'done', progress: 100, totalItems: parsedItems.length, processedItems: [] } 
+                });
+                
+                const verifyMsgId = addMessageToChat({ role: 'model' });
+                // Pass the parsedItems directly, keeping their isFood status
+                presentVerificationCard(parsedItems.map(item => ({...item, isFood: item.isFood})), verifyMsgId);
             }
         } catch(error) {
-            addMessageToChat({ role: 'model', text: error instanceof Error ? error.message : "Ocorreu um erro ao processar a imagem." });
+            addMessageToChat({ role: 'model', text: error instanceof Error ? error.message : "Ocorreu um erro ao processar as imagens." });
         } finally {
             setIsProcessing(false);
             if(fileInputRef.current) fileInputRef.current.value = "";
@@ -230,57 +414,70 @@ const ProfessorNutriChat: React.FC = () => {
     const handleItemsConfirmed = async (messageId: string, verifiedItems: VerifiedItem[]) => {
         setIsProcessing(true);
         updateMessage(messageId, {
-            text: "Itens confirmados! Analisando informações nutricionais...",
             itemVerification: { status: 'verified', items: verifiedItems }
         });
         
-        try {
-            const itemsToProcess = verifiedItems
-                .filter(item => item.isIncluded)
-                .map(item => ({ name: item.name, quantity: item.quantity, unit: item.unit, isFood: item.isFood !== false }));
-            
-            if (itemsToProcess.length > 0) {
-                await startEnrichmentProcess(itemsToProcess);
-            } else {
-                addMessageToChat({ role: 'model', text: "Nenhum item foi selecionado para adicionar à despensa." });
-            }
-        } catch (error) {
-             addMessageToChat({ role: 'model', text: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-        } finally {
-             setIsProcessing(false);
+        const itemsToProcess = verifiedItems
+            .filter(item => item.isIncluded)
+            .map(item => ({ name: item.name, quantity: item.quantity, unit: item.unit, isFood: item.isFood !== false }));
+        
+        if (itemsToProcess.length > 0) {
+            await startEnrichmentProcess(itemsToProcess);
+        } else {
+            addMessageToChat({ role: 'model', text: "Nenhum item foi selecionado para adicionar." });
+            setIsProcessing(false);
         }
     };
 
     return (
         <div className="flex flex-col h-full bg-brand-background">
-            <div className="flex-grow overflow-y-auto p-4 space-y-4 pb-40">
+            <div className="flex-grow overflow-y-auto p-5 space-y-6 pb-40">
+                 <div className="text-center py-4">
+                    <span className="bg-gray-100 text-gray-500 text-xs px-3 py-1 rounded-full font-medium">Hoje</span>
+                </div>
+
                 {chatHistory.map((msg) => {
                     const isModelOrSystem = msg.role === 'model' || msg.role === 'system';
                     const isUser = msg.role === 'user';
                     
                     if (msg.role === 'system') {
                         return (
-                            <div key={msg.id} className="text-center text-xs text-brand-text-secondary px-4 py-2">
+                            <div key={msg.id} className="text-center text-xs text-brand-text-secondary px-4 py-2 opacity-80">
                                 {msg.text}
                             </div>
                         )
                     }
 
                     return (
-                        <div key={msg.id} className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                           {isModelOrSystem && <img src="/professor-nutri.png" alt="Professor Nutri" className="h-7 w-7 rounded-full flex-shrink-0 self-end" />}
-                           <div className={`flex flex-col max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-                                <div className={`p-3 px-4 rounded-2xl ${isUser ? 'bg-brand-primary text-white' : 'bg-brand-surface border border-brand-border text-brand-text'}`}>
-                                    {msg.imageUrl && (
-                                        <div className="mb-1">
-                                            <img src={msg.imageUrl} alt="Nota fiscal enviada" className="rounded-lg max-w-full h-auto" />
+                        <div key={msg.id} className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-fade-in`}>
+                           {isModelOrSystem && (
+                               <div className="w-8 h-8 rounded-xl bg-brand-primary flex-shrink-0 flex items-center justify-center shadow-sm self-end mb-1">
+                                   <img src="/professor-nutri-favicon.png" alt="Nutri" className="w-5 h-5" />
+                               </div>
+                           )}
+                           
+                           <div className={`flex flex-col max-w-[90%] sm:max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+                                <div 
+                                    className={`shadow-sm text-sm leading-relaxed
+                                    ${isUser 
+                                        ? 'bg-brand-text text-white rounded-2xl rounded-tr-sm p-4' 
+                                        : 'bg-transparent w-full' 
+                                    }`}
+                                >
+                                    {isModelOrSystem && msg.text && !msg.itemVerification && !msg.recipes && !msg.analysis && (
+                                         <div className="bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-sm">{msg.text}</div>
+                                    )}
+                                    
+                                    {isUser && msg.imageUrl && (
+                                        <div className="mb-2 overflow-hidden rounded-lg border border-white/20">
+                                            <img src={msg.imageUrl} alt="Nota fiscal enviada" className="max-w-full h-auto" />
                                         </div>
                                     )}
-                                    {msg.text && (
-                                         <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-                                    )}
+                                    
+                                    {isUser && msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+
                                     {msg.recipes && (
-                                        <div className="w-full space-y-2 mt-2">
+                                        <div className="w-full space-y-3 mt-2">
                                             {msg.recipes.map((recipe, i) => (
                                                <RecipeCard key={i} recipe={recipe} onSelect={() => setViewingRecipe(recipe)} />
                                             ))}
@@ -291,9 +488,9 @@ const ProfessorNutriChat: React.FC = () => {
                                </div>
 
                                 {msg.quickReplies && (
-                                    <div className="flex flex-wrap gap-2 mt-2 self-start">
+                                    <div className="flex flex-wrap gap-2 mt-3 animate-slide-in-up">
                                         {msg.quickReplies.map(reply => (
-                                            <button key={reply} onClick={() => handleQuickReply(reply)} className="px-3 py-1.5 text-sm bg-brand-surface border border-brand-border text-brand-primary rounded-full hover:bg-gray-100">
+                                            <button key={reply} onClick={() => handleQuickReply(reply)} className="px-4 py-2 text-sm font-medium bg-white border border-brand-primary/20 text-brand-primary rounded-full hover:bg-brand-primary/5 shadow-sm transition-all">
                                                 {reply}
                                             </button>
                                         ))}
@@ -303,10 +500,12 @@ const ProfessorNutriChat: React.FC = () => {
                         </div>
                     );
                 })}
-                {isProcessing && (
-                     <div className="flex gap-2.5 flex-row">
-                        <img src="/professor-nutri.png" alt="Professor Nutri" className="h-7 w-7 rounded-full flex-shrink-0 self-end" />
-                        <div className="bg-brand-surface text-brand-text border border-brand-border self-start p-3 px-4 rounded-2xl flex items-center">
+                {isProcessing && !chatHistory[chatHistory.length - 1]?.analysis && (
+                     <div className="flex gap-3 flex-row">
+                        <div className="w-8 h-8 rounded-xl bg-brand-primary flex-shrink-0 flex items-center justify-center shadow-sm self-end mb-1">
+                             <img src="/professor-nutri-favicon.png" alt="Nutri" className="w-5 h-5" />
+                        </div>
+                        <div className="bg-white border border-gray-100 self-start p-4 rounded-2xl rounded-tl-sm shadow-sm flex items-center">
                             <div className="typing-indicator">
                                 <span/>
                                 <span/>
@@ -316,14 +515,13 @@ const ProfessorNutriChat: React.FC = () => {
                      </div>
                 )}
                 <div ref={chatEndRef} />
-                 {/* FIX: Removed non-standard "jsx" prop from style tag. */}
                  <style>{`
                     .typing-indicator span {
-                        height: 8px;
-                        width: 8px;
+                        height: 6px;
+                        width: 6px;
                         float: left;
-                        margin: 0 1px;
-                        background-color: #9E9EA1;
+                        margin: 0 2px;
+                        background-color: #10B981;
                         display: block;
                         border-radius: 50%;
                         opacity: 0.4;
@@ -336,45 +534,42 @@ const ProfessorNutriChat: React.FC = () => {
                         animation-delay: .4s;
                     }
                     @keyframes blink {
-                        50% {
-                            opacity: 1;
-                        }
+                        50% { opacity: 1; transform: scale(1.2); }
                     }
                 `}</style>
             </div>
             
-             <div className="fixed bottom-[70px] left-0 right-0 p-3 bg-transparent z-10">
-                <div className="bg-brand-surface/90 backdrop-blur-lg border border-brand-border rounded-2xl shadow-2xl max-w-2xl mx-auto p-2">
-                    <form onSubmit={handleSubmit} className="flex items-end gap-2">
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isProcessing}
-                            className="p-2.5 text-brand-text-secondary hover:text-brand-primary rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
-                            aria-label="Enviar imagem da nota fiscal"
-                        >
-                           <Camera className="h-5 w-5" />
-                        </button>
-                        <textarea
-                            ref={textareaRef}
-                            rows={1}
-                            value={userInput}
-                            onChange={(e) => setUserInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Converse com o Professor Nutri..."
-                            className="flex-grow p-2 bg-transparent border-none rounded-lg focus:outline-none focus:ring-0 resize-none text-brand-text placeholder:text-brand-text-secondary/70 text-sm max-h-32"
-                            disabled={isProcessing}
-                        />
-                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
-                        <button
-                            type="submit"
-                            disabled={isProcessing || !userInput.trim()}
-                            className="w-9 h-9 flex items-center justify-center bg-brand-primary text-white rounded-xl disabled:bg-brand-ios-gray-dark disabled:cursor-not-allowed transition-all duration-200 flex-shrink-0 hover:bg-brand-dark"
-                            aria-label="Enviar mensagem"
-                        >
-                            {isProcessing ? <LoaderCircle className="animate-spin h-5 w-5" /> : <ArrowUp className="h-5 w-5" />}
-                        </button>
-                    </form>
+             <div className="fixed bottom-[90px] left-0 right-0 px-4 z-10 max-w-2xl mx-auto">
+                <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-3xl shadow-float p-2 pl-3 flex items-end gap-2">
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isProcessing}
+                        className="p-2.5 mb-0.5 text-brand-text-secondary hover:text-brand-primary hover:bg-brand-primary/10 rounded-xl disabled:opacity-50 transition-colors"
+                    >
+                       <ImagePlus className="h-6 w-6" />
+                    </button>
+                    
+                    <textarea
+                        ref={textareaRef}
+                        rows={1}
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Pergunte algo ou envie uma lista..."
+                        className="flex-grow py-3 bg-transparent border-none focus:outline-none resize-none text-brand-text placeholder:text-gray-400 text-base max-h-32 leading-relaxed"
+                        disabled={isProcessing}
+                    />
+                    
+                    <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                    
+                    <button
+                        onClick={(e) => handleSubmit(e as any)}
+                        disabled={isProcessing || !userInput.trim()}
+                        className="w-11 h-11 mb-0.5 flex items-center justify-center bg-brand-text text-white rounded-2xl shadow-lg disabled:bg-gray-300 disabled:shadow-none transform transition-all active:scale-95 hover:bg-brand-primary"
+                    >
+                        {isProcessing ? <LoaderCircle className="animate-spin h-5 w-5" /> : <ArrowUp className="h-5 w-5" strokeWidth={3} />}
+                    </button>
                 </div>
             </div>
         </div>
