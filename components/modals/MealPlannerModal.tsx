@@ -2,8 +2,8 @@
 import React, { useState, useContext, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { AppContext } from '../../contexts/AppContext';
-import { X, Sparkles, LoaderCircle, Sun, Moon, Coffee, CalendarPlus, Edit, Trash2, PlusCircle, ArrowRight, ArrowLeft, Utensils, Heart, Leaf, Banknote, CheckCircle, Brain, ChefHat } from 'lucide-react';
-import type { MealPlanRequest, PlannedMeal, Recipe, MealLogEntry } from '../../types';
+import { X, Sparkles, LoaderCircle, Sun, Moon, Coffee, CalendarPlus, Edit, Trash2, PlusCircle, ArrowRight, ArrowLeft, Utensils, Heart, Leaf, Banknote, CheckCircle, Brain, ChefHat, Sandwich } from 'lucide-react';
+import type { MealPlanRequest, PlannedMeal, Recipe, MealLogEntry, MealType } from '../../types';
 import { generateMealPlan } from '../../services/geminiService';
 import PlannerRecipeCard from '../PlannerRecipeCard';
 import EditableRecipeModal from './EditableRecipeModal';
@@ -11,18 +11,19 @@ import { ACTION_XP_VALUES } from '../../services/gamificationService';
 
 type PlannerStep = 'hub' | 'entry' | 'context' | 'finetuning' | 'loading' | 'overview' | 'summary' | 'shoppingList';
 type Priority = 'use_pantry' | 'healthy' | 'new_foods' | 'economy';
-type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 const getMealType = (timestamp: number): MealType => {
     const hour = new Date(timestamp).getHours();
     if (hour < 11) return 'breakfast';
-    if (hour < 17) return 'lunch';
+    if (hour < 15) return 'lunch';
+    if (hour < 18) return 'snack';
     return 'dinner';
 };
 
 const mealTypeDetails: Record<MealType, { label: string, icon: React.ElementType }> = {
     breakfast: { label: 'Café da Manhã', icon: Coffee },
     lunch: { label: 'Almoço', icon: Sun },
+    snack: { label: 'Lanche da Tarde', icon: Sandwich },
     dinner: { label: 'Jantar', icon: Moon },
 };
 
@@ -91,6 +92,10 @@ const HubScreen: React.FC<{
                                     const meal = mealsByType[mealType];
                                     const { label, icon: Icon } = mealTypeDetails[mealType];
 
+                                    // Only show slots if they have meals or it's Lunch/Dinner to avoid clutter
+                                    // OR show all slots if user wants full control? Let's show occupied slots or primary ones
+                                    if (!meal && (mealType === 'snack' || mealType === 'breakfast')) return null;
+
                                     if (meal) {
                                         return (
                                             <div key={meal.id} className="bg-brand-surface p-2.5 rounded-lg border border-brand-border flex items-center justify-between group">
@@ -140,11 +145,11 @@ const PlanEntrySheet: React.FC<{ onSelect: (type: 'quick' | 'full') => void }> =
         <div className="mt-6 space-y-4">
             <div onClick={() => onSelect('quick')} className="bg-brand-surface p-4 rounded-xl border border-brand-border cursor-pointer hover:border-brand-primary">
                 <p className="font-bold text-brand-text">Planejamento rápido</p>
-                <p className="text-sm text-brand-text-secondary">Sugestões para 2 ou 3 jantares, em poucos toques.</p>
+                <p className="text-sm text-brand-text-secondary">Sugestões para 3 jantares, em poucos toques.</p>
             </div>
             <div onClick={() => onSelect('full')} className="bg-brand-surface p-4 rounded-xl border border-brand-border cursor-pointer hover:border-brand-primary">
-                <p className="font-bold text-brand-text">Semana completa</p>
-                <p className="text-sm text-brand-text-secondary">Planejar mais dias e organizar melhor as compras.</p>
+                <p className="font-bold text-brand-text">Personalizado</p>
+                <p className="text-sm text-brand-text-secondary">Escolha quais refeições (Café, Almoço, Lanche, Jantar) e dias.</p>
             </div>
         </div>
         <p className="text-xs text-brand-text-secondary mt-6 bg-yellow-50 text-yellow-800 px-3 py-2 rounded-lg">
@@ -155,10 +160,16 @@ const PlanEntrySheet: React.FC<{ onSelect: (type: 'quick' | 'full') => void }> =
 
 const WeeklyContextScreen: React.FC<{ onNext: (data: Partial<MealPlanRequest>) => void, onSkip: () => void, initialData: Partial<MealPlanRequest> }> = ({ onNext, onSkip, initialData }) => {
     const [nightsToCook, setNightsToCook] = useState(initialData.nightsToCook || 3);
-    const [busyDays, setBusyDays] = useState<string[]>(initialData.busyDays || []);
+    const [selectedMeals, setSelectedMeals] = useState<MealType[]>(initialData.meals || ['dinner']);
     const [priority, setPriority] = useState<Priority>(initialData.priority || 'use_pantry');
 
-    const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+    const mealOptions: { id: MealType, label: string, icon: React.ElementType }[] = [
+        { id: 'breakfast', label: 'Café da Manhã', icon: Coffee },
+        { id: 'lunch', label: 'Almoço', icon: Sun },
+        { id: 'snack', label: 'Lanche Tarde', icon: Sandwich },
+        { id: 'dinner', label: 'Jantar', icon: Moon },
+    ];
+
     const priorities: { id: Priority, label: string, icon: React.ElementType }[] = [
         { id: 'use_pantry', label: 'Aproveitar o que já temos', icon: Utensils },
         { id: 'healthy', label: 'Comida saudável', icon: Leaf },
@@ -166,33 +177,75 @@ const WeeklyContextScreen: React.FC<{ onNext: (data: Partial<MealPlanRequest>) =
         { id: 'economy', label: 'Gastar menos', icon: Banknote },
     ];
     
+    const toggleMeal = (meal: MealType) => {
+        setSelectedMeals(prev => prev.includes(meal) ? prev.filter(m => m !== meal) : [...prev, meal]);
+    };
+
     return (
         <div className="animate-fade-in">
-            <h3 className="font-bold text-xl text-center mb-4 text-brand-text">Contexto da semana</h3>
-            <div className="space-y-4">
+            <h3 className="font-bold text-xl text-center mb-4 text-brand-text">Vamos configurar seu plano</h3>
+            <div className="space-y-5">
                 <div>
-                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Em quantas noites querem cozinhar?</p>
-                    <div className="grid grid-cols-4 gap-2">
-                        {[2,3,4,5].map(n => <button key={n} onClick={() => setNightsToCook(n)} className={`p-3 rounded-lg font-bold ${nightsToCook === n ? 'bg-brand-primary text-white' : 'bg-brand-surface'}`}>{n}{n === 5 ? '+' : ''}</button>)}
+                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Quais refeições você quer planejar?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {mealOptions.map(m => (
+                            <button 
+                                key={m.id} 
+                                onClick={() => toggleMeal(m.id)} 
+                                className={`p-3 rounded-xl font-bold flex flex-col items-center justify-center gap-2 border-2 transition-all ${
+                                    selectedMeals.includes(m.id) 
+                                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primary' 
+                                    : 'border-transparent bg-brand-surface text-brand-text-secondary hover:bg-gray-100'
+                                }`}
+                            >
+                                <m.icon size={24} />
+                                <span className="text-xs">{m.label}</span>
+                            </button>
+                        ))}
                     </div>
                 </div>
+
                 <div>
-                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Quais dias são mais corridos?</p>
-                    <div className="grid grid-cols-4 gap-2">
-                        {days.map(d => {
-                            const isSelected = busyDays.includes(d);
-                            return <button key={d} onClick={() => setBusyDays(b => isSelected ? b.filter(day => day !== d) : [...b, d])} className={`p-3 rounded-lg font-bold ${isSelected ? 'bg-brand-primary text-white' : 'bg-brand-surface'}`}>{d}</button>
-                        })}
+                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Por quantos dias?</p>
+                    <div className="grid grid-cols-3 gap-2">
+                        {[3, 5, 7].map(n => (
+                            <button 
+                                key={n} 
+                                onClick={() => setNightsToCook(n)} 
+                                className={`p-3 rounded-lg font-bold transition-colors ${
+                                    nightsToCook === n ? 'bg-brand-primary text-white shadow-md' : 'bg-brand-surface text-brand-text hover:bg-gray-100'
+                                }`}
+                            >
+                                {n} Dias
+                            </button>
+                        ))}
                     </div>
                 </div>
+
                 <div>
-                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Qual a prioridade da semana?</p>
-                    <div className="space-y-2">
-                        {priorities.map(p => <button key={p.id} onClick={() => setPriority(p.id)} className={`w-full text-left p-3 rounded-lg font-bold flex items-center gap-3 ${priority === p.id ? 'bg-brand-primary text-white' : 'bg-brand-surface'}`}><p.icon size={18}/> {p.label}</button>)}
+                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Qual o foco principal?</p>
+                    <div className="grid grid-cols-1 gap-2">
+                        {priorities.map(p => (
+                            <button 
+                                key={p.id} 
+                                onClick={() => setPriority(p.id)} 
+                                className={`w-full text-left p-3 rounded-lg font-bold flex items-center gap-3 transition-colors ${
+                                    priority === p.id ? 'bg-brand-text text-white' : 'bg-brand-surface text-brand-text hover:bg-gray-100'
+                                }`}
+                            >
+                                <p.icon size={18}/> {p.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>
-            <button onClick={() => onNext({ nightsToCook, busyDays, priority })} className="w-full mt-6 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl">Continuar</button>
+            <button 
+                onClick={() => onNext({ nightsToCook, meals: selectedMeals, priority })} 
+                disabled={selectedMeals.length === 0}
+                className="w-full mt-6 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl disabled:bg-gray-300 disabled:cursor-not-allowed shadow-lg hover:bg-brand-dark transition-all active:scale-95"
+            >
+                Continuar
+            </button>
         </div>
     );
 };
@@ -201,8 +254,8 @@ const WeeklyFineTuningScreen: React.FC<{ onGenerate: (data: Partial<MealPlanRequ
     const [specificIngredients, setSpecificIngredients] = useState<string[]>([]);
     const [avoidItems, setAvoidItems] = useState<string[]>([]);
     
-    const pantryOptions = useMemo(() => pantry.slice(0, 5).map(i => i.name), [pantry]);
-    const avoidOptions = ['Fritura', 'Doces', 'Refrigerante', 'Carne vermelha', 'Nada específico'];
+    const pantryOptions = useMemo(() => pantry.slice(0, 6).map(i => i.name), [pantry]);
+    const avoidOptions = ['Fritura', 'Doces', 'Refrigerante', 'Carne vermelha', 'Glúten'];
 
     const toggleItem = (list: string[], setList: Function, item: string) => {
         setList((current: string[]) => current.includes(item) ? current.filter(i => i !== item) : [...current, item]);
@@ -211,40 +264,79 @@ const WeeklyFineTuningScreen: React.FC<{ onGenerate: (data: Partial<MealPlanRequ
     return (
         <div className="animate-fade-in">
              <h3 className="font-bold text-xl text-center mb-4 text-brand-text">Ajustes Finais</h3>
-             <div className="space-y-4">
+             <div className="space-y-6">
                 <div>
                     <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Quer usar algo que já tem em casa?</p>
                     <div className="flex flex-wrap gap-2">
-                        {pantryOptions.map(item => <button key={item} onClick={() => toggleItem(specificIngredients, setSpecificIngredients, item)} className={`px-3 py-1.5 rounded-full font-semibold text-sm ${specificIngredients.includes(item) ? 'bg-brand-primary text-white' : 'bg-brand-surface'}`}>{item}</button>)}
+                        {pantryOptions.map(item => <button key={item} onClick={() => toggleItem(specificIngredients, setSpecificIngredients, item)} className={`px-3 py-1.5 rounded-full font-semibold text-sm transition-colors ${specificIngredients.includes(item) ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{item}</button>)}
                     </div>
                 </div>
                  <div>
-                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Quer pegar leve em algo?</p>
+                    <p className="font-semibold text-sm mb-2 text-brand-text-secondary">Quer evitar algo?</p>
                     <div className="flex flex-wrap gap-2">
-                        {avoidOptions.map(item => <button key={item} onClick={() => toggleItem(avoidItems, setAvoidItems, item)} className={`px-3 py-1.5 rounded-full font-semibold text-sm ${avoidItems.includes(item) ? 'bg-brand-primary text-white' : 'bg-brand-surface'}`}>{item}</button>)}
+                        {avoidOptions.map(item => <button key={item} onClick={() => toggleItem(avoidItems, setAvoidItems, item)} className={`px-3 py-1.5 rounded-full font-semibold text-sm transition-colors ${avoidItems.includes(item) ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{item}</button>)}
                     </div>
                 </div>
              </div>
-             <button onClick={() => onGenerate({ specificIngredients, avoidItems })} className="w-full mt-6 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center"><Brain className="mr-2" size={18}/> Gerar Sugestões</button>
+             <div className="mt-8 flex gap-3">
+                 <button onClick={onBack} className="p-3 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200"><ArrowLeft size={20}/></button>
+                 <button onClick={() => onGenerate({ specificIngredients, avoidItems })} className="flex-1 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center shadow-lg hover:bg-brand-dark transition-all"><Brain className="mr-2" size={18}/> Gerar Sugestões</button>
+             </div>
         </div>
     )
 };
 
-const WeeklyPlanOverviewScreen: React.FC<{ plan: PlannedMeal[], onConfirm: () => void, onRegenerate: () => void, onSelectRecipe: (recipe: Recipe) => void }> = ({ plan, onConfirm, onRegenerate, onSelectRecipe }) => (
-    <div className="animate-fade-in">
-        <h3 className="font-bold text-xl text-center mb-1 text-brand-text">Sugestões para esta semana</h3>
-        <p className="text-center text-sm text-brand-text-secondary mb-4">Tudo aqui é um rascunho. Você pode trocar ou remover qualquer dia.</p>
-        <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-2">
-            {plan.map((meal, index) => (
-                <div key={index}>
-                    <h4 className="font-bold text-sm mb-1 text-brand-text">{meal.dayOfWeek} - {mealTypeDetails[meal.mealType].label}</h4>
-                    <PlannerRecipeCard recipe={meal.recipe} onView={() => onSelectRecipe(meal.recipe)} />
-                </div>
-            ))}
+const WeeklyPlanOverviewScreen: React.FC<{ plan: PlannedMeal[], onConfirm: () => void, onRegenerate: () => void, onSelectRecipe: (recipe: Recipe) => void }> = ({ plan, onConfirm, onRegenerate, onSelectRecipe }) => {
+    
+    // Group plan by day
+    const groupedPlan = useMemo(() => {
+        const groups: Record<string, PlannedMeal[]> = {};
+        plan.forEach(meal => {
+            if (!groups[meal.dayOfWeek]) groups[meal.dayOfWeek] = [];
+            groups[meal.dayOfWeek].push(meal);
+        });
+        // Sort days based on standard week order if needed, though AI usually returns in order
+        return groups;
+    }, [plan]);
+
+    const mealOrder: Record<MealType, number> = { 'breakfast': 1, 'lunch': 2, 'snack': 3, 'dinner': 4 };
+
+    return (
+        <div className="animate-fade-in flex flex-col h-full">
+            <h3 className="font-bold text-xl text-center mb-1 text-brand-text">Sugestões para esta semana</h3>
+            <p className="text-center text-sm text-brand-text-secondary mb-4">Confira o que a IA preparou para você.</p>
+            
+            <div className="space-y-6 flex-1 overflow-y-auto pr-2">
+                {Object.entries(groupedPlan).map(([day, meals]) => (
+                    <div key={day} className="bg-gray-50 rounded-2xl p-3 border border-gray-100">
+                        <h4 className="font-bold text-brand-text mb-3 px-1 flex items-center gap-2">
+                            <span className="bg-brand-primary/10 text-brand-primary p-1 rounded-md"><CalendarPlus size={14}/></span>
+                            {day}
+                        </h4>
+                        <div className="space-y-3">
+                            {(meals as PlannedMeal[])
+                                .sort((a, b) => mealOrder[a.mealType] - mealOrder[b.mealType])
+                                .map((meal, index) => (
+                                <div key={index} className="pl-2 border-l-2 border-brand-primary/20">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        {React.createElement(mealTypeDetails[meal.mealType].icon, { size: 14, className: "text-brand-text-secondary" })}
+                                        <span className="text-xs font-bold text-brand-text-secondary uppercase tracking-wide">{mealTypeDetails[meal.mealType].label}</span>
+                                    </div>
+                                    <PlannerRecipeCard recipe={meal.recipe} onView={() => onSelectRecipe(meal.recipe)} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            
+            <div className="pt-4 mt-2 border-t border-brand-border flex-shrink-0 flex gap-3">
+                 <button onClick={onRegenerate} className="p-3 rounded-xl bg-gray-100 text-gray-600 font-bold text-sm hover:bg-gray-200">Tentar Outro</button>
+                 <button onClick={onConfirm} className="flex-1 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center shadow-lg hover:bg-brand-dark transition-all"><CheckCircle className="mr-2" size={18}/> Aceitar Plano</button>
+            </div>
         </div>
-        <button onClick={onConfirm} className="w-full mt-6 bg-brand-primary text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center"><CheckCircle className="mr-2" size={18}/> Confirmar Plano da Semana</button>
-    </div>
-);
+    );
+};
 
 const MealPlannerModal: React.FC = () => {
     const context = useContext(AppContext);
@@ -268,12 +360,17 @@ const MealPlannerModal: React.FC = () => {
     const { setIsMealPlannerOpen, userProfile, pantry, mealLog, addMealLogEntry, setViewingRecipe, awardGoldenCarrots, deleteMealLogEntry, updateMealLogEntry } = context;
 
     const handlePlanTypeSelect = (type: 'quick' | 'full') => {
-        const newRequest: Partial<MealPlanRequest> = {
-            ...request,
-            nightsToCook: type === 'quick' ? 3 : 5,
-        };
-        setRequest(newRequest);
-        setStep('context');
+        if (type === 'quick') {
+            const newRequest: Partial<MealPlanRequest> = {
+                nightsToCook: 3,
+                meals: ['dinner'],
+                priority: 'use_pantry'
+            };
+            setRequest(newRequest);
+            setStep('finetuning'); // Jump straight to fine-tuning for quick mode
+        } else {
+            setStep('context'); // Full configuration
+        }
     };
 
     const handleGeneratePlan = async (data: Partial<MealPlanRequest>) => {
@@ -293,28 +390,26 @@ const MealPlannerModal: React.FC = () => {
     const handleConfirmPlan = async () => {
         setIsSubmitting(true);
         const now = new Date();
-        const currentDayOfWeek = now.getDay(); // Sunday: 0, Monday: 1...
+        const currentDayOfWeek = now.getDay(); // Sunday: 0
         const dayMap: Record<string, number> = { 'Domingo': 0, 'Segunda-feira': 1, 'Terça-feira': 2, 'Quarta-feira': 3, 'Quinta-feira': 4, 'Sexta-feira': 5, 'Sábado': 6 };
     
         for (const plannedMeal of plan) {
             const normalizedDay = normalizeDayName(plannedMeal.dayOfWeek);
             const targetDayOfWeek = dayMap[normalizedDay];
             
-            if (targetDayOfWeek === undefined) {
-                console.warn("Dia da semana inválido:", plannedMeal.dayOfWeek);
-                continue;
-            }
+            if (targetDayOfWeek === undefined) continue;
 
             let dayDifference = targetDayOfWeek - currentDayOfWeek;
-            // If the day has passed this week, schedule for next week
             if (dayDifference < 0) dayDifference += 7;
     
             const mealDate = new Date();
             mealDate.setDate(now.getDate() + dayDifference);
             
+            // Set specific times based on meal type
             if (plannedMeal.mealType === 'breakfast') mealDate.setHours(8, 0, 0, 0);
             else if (plannedMeal.mealType === 'lunch') mealDate.setHours(12, 30, 0, 0);
-            else mealDate.setHours(19, 0, 0, 0);
+            else if (plannedMeal.mealType === 'snack') mealDate.setHours(16, 0, 0, 0); // Afternoon Snack time
+            else mealDate.setHours(19, 30, 0, 0); // Dinner
 
             await addMealLogEntry({
                 recipeTitle: plannedMeal.recipe.title,
@@ -323,7 +418,7 @@ const MealPlannerModal: React.FC = () => {
             });
         }
     
-        awardGoldenCarrots(15, "Plano da semana criado!");
+        awardGoldenCarrots(30, "Plano da semana criado!");
         setIsSubmitting(false);
         setStep('hub');
     };
@@ -341,7 +436,7 @@ const MealPlannerModal: React.FC = () => {
     
     const handleSelectRecipe = (recipe: Recipe) => {
         setViewingRecipe(recipe);
-        handleClose();
+        handleClose(); // Close modal to show recipe
     };
 
     const renderContent = () => {
@@ -355,7 +450,7 @@ const MealPlannerModal: React.FC = () => {
             case 'finetuning':
                 return <WeeklyFineTuningScreen onGenerate={handleGeneratePlan} onBack={() => setStep('context')} pantry={pantry} />;
             case 'loading':
-                return <div className="text-center p-8"><LoaderCircle className="h-10 w-10 animate-spin text-brand-primary mx-auto" /><p className="mt-2 text-brand-text-secondary">Gerando plano...</p></div>;
+                return <div className="text-center p-8"><LoaderCircle className="h-10 w-10 animate-spin text-brand-primary mx-auto" /><p className="mt-2 text-brand-text-secondary">A IA está criando seu cardápio...</p></div>;
             case 'overview':
                 return <WeeklyPlanOverviewScreen plan={plan} onConfirm={handleConfirmPlan} onRegenerate={() => handleGeneratePlan(request)} onSelectRecipe={handleSelectRecipe}/>
             default:
@@ -374,11 +469,11 @@ const MealPlannerModal: React.FC = () => {
                     onClick={e => e.stopPropagation()}
                 >
                     <header className="p-4 border-b border-brand-border flex items-center justify-between flex-shrink-0">
-                        <h2 className="text-lg font-bold text-brand-text flex items-center gap-2"><Sparkles className="text-brand-primary"/> Planejador Semanal</h2>
+                        <h2 className="text-lg font-bold text-brand-text flex items-center gap-2"><Sparkles className="text-brand-primary"/> Planejador Inteligente</h2>
                         <button onClick={handleClose} className="p-1.5 rounded-full hover:bg-gray-100"><X size={20}/></button>
                     </header>
 
-                    <main className="flex-1 overflow-y-auto p-4">
+                    <main className="flex-1 overflow-y-auto p-5">
                         {renderContent()}
                     </main>
                 </div>

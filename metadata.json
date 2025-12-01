@@ -2,6 +2,7 @@
   "name": "EduFood Family",
   "description": "O aliado dos pais na educação nutricional. Planejamento de refeições, gestão de despensa e argumentos lúdicos para transformar a alimentação dos filhos.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }

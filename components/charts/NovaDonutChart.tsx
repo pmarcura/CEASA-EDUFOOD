@@ -154,7 +154,7 @@ const NovaDonutChart: React.FC = () => {
                                 <div className="flex items-center gap-1.5 mt-1">
                                     <Lightbulb size={12} className="text-brand-primary"/>
                                     <p className="text-xs text-brand-text-secondary leading-tight">
-                                        {NOVA_CLASSIFICATION[item.novaClassification].description}
+                                        {NOVA_CLASSIFICATION[item.novaClassification]?.description || NOVA_CLASSIFICATION.processed.description}
                                     </p>
                                 </div>
                             </div>

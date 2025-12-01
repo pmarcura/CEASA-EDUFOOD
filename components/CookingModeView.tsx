@@ -199,7 +199,7 @@ const CookingModeView: React.FC = () => {
     );
 
     return (
-        <div className="fixed inset-0 bg-brand-background z-40 flex flex-col">
+        <div className="fixed inset-0 bg-brand-background z-[60] flex flex-col">
             <header className="p-3 flex items-center justify-between border-b border-brand-border flex-shrink-0">
                 <div className="w-8">
                    {!isFinished && currentStepIndex > 0 && (

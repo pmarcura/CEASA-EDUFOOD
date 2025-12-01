@@ -105,7 +105,7 @@ const PantryListItem: React.FC<PantryListItemProps> = ({
         )
     }
 
-    const novaInfo = NOVA_CLASSIFICATION[item.novaClassification];
+    const novaInfo = NOVA_CLASSIFICATION[item.novaClassification] || NOVA_CLASSIFICATION.processed;
     return (
         <div className={`bg-brand-surface rounded-xl transition-shadow duration-200 ${isSelected ? 'shadow-md ring-2 ring-green-200' : 'hover:shadow-md'}`}>
             <div 

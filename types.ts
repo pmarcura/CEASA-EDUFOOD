@@ -20,6 +20,16 @@ export type PantryManagementHabit = 'organized' | 'tries' | 'chaotic';
 export type FamilyGoal = 'eat_healthier' | 'organize_time' | 'reduce_waste' | 'kids_eat_better' | 'plan_menus';
 export type FoodSelectivityLevel = 'low' | 'medium' | 'high';
 export type ReligiousDiet = 'halal' | 'kosher';
+export type FoodPersonality = 
+  | 'food_responsive' 
+  | 'emotional_overeater' 
+  | 'enjoyment_of_food' 
+  | 'satiety_responsive' 
+  | 'neophobic' 
+  | 'food_fussiness' 
+  | 'slowness_in_eating' 
+  | 'eating_competent' 
+  | 'unknown';
 
 
 export interface Child {
@@ -37,6 +47,7 @@ export interface Child {
     level: FoodSelectivityLevel;
     context?: string;
   };
+  foodPersonality?: FoodPersonality[]; // Changed to array for multi-selection
   dislikedFoods: string;
 }
 
@@ -65,6 +76,9 @@ export interface UserProfile {
   streak: number;
   lastLogin: number;
   lastPantryReview?: number;
+  // Social fields
+  friends?: string[]; // Array of UIDs
+  
   // Deprecated fields for migration
   dailyMission?: MissionProgress;
   weeklyMission?: MissionProgress;
@@ -79,6 +93,18 @@ export interface NutritionalInfo {
     benefits: string[];
     risks: string[];
     nutritionFacts: string;
+}
+
+export interface ProductAnalysisResult {
+    productName: string;
+    brand: string;
+    size: string; // e.g., "2 Litros", "350g"
+    novaClassification: NovaClassificationKey;
+    healthScore: number; // 0-100
+    additivesExplained: { term: string; explanation: string; risk: 'low' | 'medium' | 'high' }[];
+    positivePoints: string[];
+    negativePoints: string[];
+    scannedItem: Omit<PantryItem, 'id'>; // Ready to add object
 }
 
 export interface PantryItem {
@@ -96,6 +122,8 @@ export interface PantryItem {
   tags: string[];
   tipRead?: boolean;
   addedAt?: number;
+  preferenceRating?: number; // Legacy: General rating
+  childPreferences?: Record<string, number>; // Map Child ID -> Stars (1-5)
 }
 export interface RecipeIngredient {
   name: string;
@@ -134,6 +162,7 @@ export interface Recipe {
   storage: string;
   pantryStatus?: 'complete' | 'partial' | 'missing';
   missingItems?: string[];
+  chefNote?: string; // NEW: Explanation for why this recipe was chosen based on profile
 }
 
 export interface MealLogEntry {
@@ -194,6 +223,7 @@ export interface ChatMessage {
     analysis?: AnalysisState;
     imageUrl?: string; 
     itemVerification?: ItemVerificationState;
+    productAnalysis?: ProductAnalysisResult; // New field
 }
 
 export interface Mission {
@@ -260,11 +290,13 @@ export interface LeaderboardEntry {
     name: string;
     avatar: string;
     xp: number;
+    level: number;
+    isFriend: boolean;
 }
 
 // Meal Planner Types
 export type MealPlanFocus = 'use_pantry' | 'quick_recipes' | 'healthy_eating';
-export type MealType = 'breakfast' | 'lunch' | 'dinner';
+export type MealType = 'breakfast' | 'lunch' | 'snack' | 'dinner';
 
 export interface MealPlanRequest {
   meals: MealType[];
@@ -327,6 +359,24 @@ export interface PantryReviewChange {
     newQuantity?: number;
     newUnit?: string;
     originalItem: PantryItem;
+    newPreferenceRating?: number; // Deprecated
+    newChildPreferences?: Record<string, number>; // Map Child ID -> Stars
+}
+
+// Notification Types
+export type NotificationType = 'level_up' | 'streak' | 'meal' | 'post' | 'friend_request';
+
+export interface AppNotification {
+    id: string;
+    recipientUid: string;
+    senderUid: string;
+    senderName: string;
+    senderAvatar: string;
+    type: NotificationType;
+    content: string;
+    timestamp: number;
+    read: boolean;
+    data?: any; // e.g., recipeTitle, streakDays, etc.
 }
 
 type GamificationContextType = ReturnType<typeof useGamification>;
@@ -372,4 +422,13 @@ export interface AppContextType extends GamificationContextType {
   upcomingMeal: MealLogEntry | null;
   isPantryReviewOpen: boolean;
   setIsPantryReviewOpen: (isOpen: boolean) => void;
+  isCookNowOpen: boolean;
+  setIsCookNowOpen: (isOpen: boolean) => void;
+  
+  // Social & Notifications
+  notifications: AppNotification[];
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  sendFriendRequest: (targetUid: string) => Promise<void>;
+  acceptFriendRequest: (notification: AppNotification) => Promise<void>;
+  setActiveTab: (tab: Tab) => void;
 }

@@ -5,6 +5,7 @@ import { X, Clock, Users, BarChart, AlertTriangle, List, CheckSquare, ChefHat, H
 import type { Recipe } from '../../types';
 
 const getNumericServings = (serves: string): number => {
+    if (!serves) return 2;
     const numbers = serves.match(/\d+(\.\d+)?/g);
     return numbers ? numbers.map(Number).reduce((acc, curr) => acc + curr, 0) : 2;
 };
@@ -37,9 +38,13 @@ const RecipeDetailView: React.FC = () => {
 
     // Helper to check if ingredient is in pantry
     const checkPantryAvailability = (ingredientName: string) => {
-        const normalizedName = ingredientName.toLowerCase().trim();
+        if (!ingredientName) return false;
+        const normalizedName = String(ingredientName).toLowerCase().trim();
         // Simple contains check - can be improved with fuzzy search later
-        return pantry.some(item => normalizedName.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(normalizedName));
+        return pantry.some(item => {
+            const pantryName = item.name ? String(item.name).toLowerCase() : '';
+            return pantryName && (normalizedName.includes(pantryName) || pantryName.includes(normalizedName));
+        });
     };
 
     // Calculate availability stats
@@ -68,7 +73,7 @@ const RecipeDetailView: React.FC = () => {
     const hasMissingItems = availabilityStats.percentage < 100;
 
     return (
-        <div className="fixed inset-0 bg-brand-background z-30 flex flex-col">
+        <div className="fixed inset-0 bg-brand-background z-[60] flex flex-col">
             <header className="p-3 flex items-center justify-between border-b border-brand-border flex-shrink-0 bg-brand-surface">
                 <h2 className="text-lg font-bold text-brand-text truncate pr-4">{recipe.title}</h2>
                 <button onClick={handleClose} className="p-1.5 rounded-full hover:bg-gray-100">

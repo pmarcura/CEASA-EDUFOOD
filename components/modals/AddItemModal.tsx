@@ -29,16 +29,14 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ onClose }) => {
         if (!name.trim()) return;
         setIsEnriching(true);
         try {
-            // Mock adding just to trigger the logic, but we are actually creating the object here
+            // Try to enrich just to show the user something is happening or pre-validate
+            // In a real UX, we might fill more fields, but here we just ensure the name is clean
             const enrichedDataArray = await enrichFoodItemsBatch([name]);
-            if (enrichedDataArray.length > 0) {
-                // In a real scenario we might update some local state with a preview
-                // For now, let's just save directly using the enriched data logic in handleSave
-                // Or better, set a "pending enrichment" state that handleSave uses.
-                // To keep it simple for the user: Just clicking "Magic" saves time later.
+            if (enrichedDataArray.length > 0 && enrichedDataArray[0].name) {
+                setName(toTitleCase(enrichedDataArray[0].name));
             }
         } catch (error) {
-            console.error("Enrichment failed", error);
+            console.error("Enrichment preview failed", error);
         } finally {
             setIsEnriching(false);
         }
@@ -49,7 +47,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ onClose }) => {
         setIsSaving(true);
 
         try {
-            // Attempt enrichment on save if not already done, or just basic add
+            // Attempt enrichment on save to get full data (nutrition, icon, etc.)
             const enrichedDataArray = await enrichFoodItemsBatch([name]);
             const enriched = enrichedDataArray[0];
 
@@ -61,7 +59,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ onClose }) => {
                 codexCategory: enriched?.codexCategory || 'Outros',
                 ageWarningTag: enriched?.ageWarningTag || '',
                 riskLevel: enriched?.riskLevel || 'Médio',
-                icon: enriched?.icon || '📦',
+                icon: enriched?.icon || '📦', // AI provided icon or fallback
                 color: enriched?.color || '#9CA3AF',
                 nutritionalInfo: enriched?.nutritionalInfo || { origin: 'Manual', benefits: [], risks: [], nutritionFacts: '' },
                 tags: enriched?.tags || [],
@@ -74,7 +72,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ onClose }) => {
             onClose();
         } catch (error) {
             console.error("Failed to add item", error);
-            // Fallback save without enrichment
+            // Fallback save without enrichment if AI fails
              const newItem: Omit<PantryItem, 'id'> = {
                 name: toTitleCase(name),
                 quantity: parseFloat(quantity),
@@ -110,7 +108,17 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ onClose }) => {
 
                 <div className="space-y-3">
                     <div>
-                        <label className="text-xs font-bold text-brand-text-secondary uppercase mb-1 block">Nome do Produto</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-bold text-brand-text-secondary uppercase">Nome do Produto</label>
+                            <button 
+                                onClick={handleSmartFill} 
+                                disabled={isEnriching || !name.trim()}
+                                className="text-xs flex items-center gap-1 text-brand-primary hover:text-brand-dark disabled:opacity-50 transition-colors"
+                            >
+                                {isEnriching ? <LoaderCircle size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                                Mágica
+                            </button>
+                        </div>
                         <div className="relative">
                             <input 
                                 type="text" 

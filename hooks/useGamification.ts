@@ -1,9 +1,9 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { db, increment } from '../firebase/config';
 import type { User, UserProfile, PantryItem, XpNoticeInfo, MissionProgress } from '../types';
 import { getLevelForXp, getXpForNewItem, ACTION_XP_VALUES, MISSION_REWARDS } from '../services/gamificationService';
 import { DAILY_MISSIONS, WEEKLY_MISSIONS } from '../constants/missions';
+import { notifyFriends } from '../services/socialService';
 
 export interface LevelUpInfo {
   oldLevel: number;
@@ -83,6 +83,8 @@ export const useGamification = (user: User | null) => {
 
     if (newLevel > oldLevel) {
       setLevelUpInfo({ oldLevel, newLevel });
+      // Notify Friends
+      notifyFriends(user, userProfileRef.current, 'level_up', `alcançou o nível ${newLevel}! 🎉`, { newLevel });
     }
   }, [user]);
 
@@ -115,6 +117,9 @@ export const useGamification = (user: User | null) => {
       
       if (newStreak > 1) {
         awardXp(5 * newStreak, `${newStreak} dias de ofensiva!`);
+        if (newStreak % 5 === 0) {
+             notifyFriends(user, profile, 'streak', `está em uma sequência de ${newStreak} dias! 🔥`, { days: newStreak });
+        }
       }
     }
 
@@ -178,6 +183,7 @@ export const useGamification = (user: User | null) => {
             weeklyMissions: profileToProcess.weeklyMissions ?? [],
             streak: profileToProcess.streak ?? 0,
             lastLogin: profileToProcess.lastLogin ?? 0,
+            friends: profileToProcess.friends ?? [],
         };
 
         setUserProfile(profileWithDefaults);
@@ -202,6 +208,7 @@ export const useGamification = (user: User | null) => {
           weeklyMissions: [],
           streak: 0,
           lastLogin: 0,
+          friends: [],
         });
       }
       setIsLoadingProfile(false);

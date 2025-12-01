@@ -1,10 +1,14 @@
+
 // Fixes floating point errors (e.g., 0.1 + 0.2 = 0.30000000004)
 // Rounds to a max of 3 decimal places, stripping trailing zeros.
 export const formatQuantity = (quantity: number): number => {
+    if (quantity === null || quantity === undefined || isNaN(quantity)) return 0;
     return Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 };
 
 export const normalizeUnit = (unit: string): string => {
+    if (!unit || typeof unit !== 'string') return 'un';
+    
     const u = unit.toLowerCase().trim();
     if (['g', 'grama', 'gramas'].includes(u)) return 'g';
     if (['kg', 'quilo', 'quilos', 'quilograma', 'quilogramas'].includes(u)) return 'kg';
@@ -18,7 +22,8 @@ export const normalizeUnit = (unit: string): string => {
 };
 
 export const toTitleCase = (str: string): string => {
-    if (!str) return '';
+    if (!str || typeof str !== 'string') return '';
+    
     const lower = str.toLowerCase();
     const exceptions = ['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'na', 'no', 'nas', 'nos', 'com', 'por', 'para', 'a', 'o', 'as', 'os'];
     

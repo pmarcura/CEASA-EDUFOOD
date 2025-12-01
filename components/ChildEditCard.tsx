@@ -1,9 +1,9 @@
 
-
 import React from 'react';
-import type { Child, FoodSelectivityLevel, ReligiousDiet } from '../types';
-import { Smile, Meh, Frown, Trash2 } from 'lucide-react';
+import type { Child, FoodSelectivityLevel, ReligiousDiet, FoodPersonality } from '../types';
+import { Smile, Meh, Frown, Trash2, Info } from 'lucide-react';
 import { RELIGIOUS_DIETS_OPTIONS } from '../../constants/foodRestrictions';
+import { FOOD_PERSONALITIES } from '../../constants/profileOptions';
 
 interface ChildEditCardProps {
     child: Child;
@@ -35,6 +35,24 @@ const ChildEditCard: React.FC<ChildEditCardProps> = ({ child, isEditing, onUpdat
         handleUpdate({ foodSelectivity: { ...child.foodSelectivity, [field]: value } });
     };
     
+    const handleTogglePersonality = (personalityId: FoodPersonality) => {
+        const currentPersonalities = Array.isArray(child.foodPersonality) ? child.foodPersonality : [];
+        let newPersonalities: FoodPersonality[];
+
+        if (personalityId === 'unknown') {
+            newPersonalities = currentPersonalities.includes('unknown') ? [] : ['unknown'];
+        } else {
+            let temp = currentPersonalities.filter(p => p !== 'unknown');
+            if (temp.includes(personalityId)) {
+                newPersonalities = temp.filter(p => p !== personalityId);
+            } else {
+                if (temp.length >= 3) return; 
+                newPersonalities = [...temp, personalityId];
+            }
+        }
+        handleUpdate({ foodPersonality: newPersonalities });
+    };
+    
     const handleToggleReligiousDiet = (diet: ReligiousDiet | 'other') => {
         const currentDiets = child.religiousDiets || [];
         const newDiets = currentDiets.includes(diet)
@@ -43,12 +61,28 @@ const ChildEditCard: React.FC<ChildEditCardProps> = ({ child, isEditing, onUpdat
         handleUpdate({ religiousDiets: newDiets });
     };
 
+    // Ensure we handle both old string format and new array format safely
+    const activePersonalities = Array.isArray(child.foodPersonality) ? child.foodPersonality : (child.foodPersonality ? [child.foodPersonality] : []);
+
     if (!isEditing) {
         return (
              <div className="bg-brand-background p-3 rounded-lg border border-brand-border">
                 <p className="font-bold text-brand-text">{child.name}, {child.age} anos</p>
-                <p className="text-xs text-brand-text-secondary capitalize">Seletividade: {child.foodSelectivity.level}</p>
-                 {child.foodSelectivity.context && <p className="text-xs text-brand-text-secondary mt-1">"{child.foodSelectivity.context}"</p>}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                    {activePersonalities.length > 0 ? activePersonalities.map(pId => {
+                        const pDef = FOOD_PERSONALITIES.find(p => p.id === pId);
+                        if (!pDef) return null;
+                        return (
+                            <div key={pId} className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md inline-flex max-w-full">
+                                <pDef.icon size={14} className="flex-shrink-0" />
+                                <span className="text-[10px] font-bold truncate">{pDef.label}</span>
+                            </div>
+                        );
+                    }) : (
+                        <span className="text-xs text-brand-text-secondary italic">Sem perfil definido</span>
+                    )}
+                </div>
+                <p className="text-xs text-brand-text-secondary capitalize mt-1.5">Seletividade: {child.foodSelectivity.level}</p>
              </div>
         )
     }
@@ -71,9 +105,44 @@ const ChildEditCard: React.FC<ChildEditCardProps> = ({ child, isEditing, onUpdat
                 </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
+                {/* Personalidade Alimentar */}
                 <div>
-                    <p className="text-sm font-semibold text-brand-text-secondary mb-1.5">Seletividade Alimentar</p>
+                    <div className="flex items-center gap-2 mb-2">
+                        <label className="text-sm font-semibold text-brand-text-secondary">Comportamento (Selecione os aplicáveis)</label>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                        {FOOD_PERSONALITIES.map(p => {
+                            const isSelected = activePersonalities.includes(p.id);
+                            return (
+                                <button
+                                    key={p.id}
+                                    onClick={() => handleTogglePersonality(p.id)}
+                                    className={`p-2.5 rounded-lg border text-left transition-all flex items-start gap-3 ${
+                                        isSelected
+                                            ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500 shadow-sm'
+                                            : 'bg-white border-brand-border text-brand-text-secondary hover:border-blue-300'
+                                    }`}
+                                >
+                                    <div className={`mt-0.5 p-1 rounded-full flex-shrink-0 ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                        <p.icon size={14} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className={`text-xs font-bold block leading-tight mb-0.5 ${isSelected ? 'text-blue-900' : 'text-brand-text'}`}>
+                                            {p.diagnosticQuestion}
+                                        </span>
+                                        <span className={`text-[10px] font-medium uppercase tracking-wide ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}>
+                                            {p.label}
+                                        </span>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div>
+                    <p className="text-sm font-semibold text-brand-text-secondary mb-1.5">Nível de Seletividade</p>
                     <div className="flex justify-around bg-white p-1 rounded-full border border-brand-border">
                         {(['low', 'medium', 'high'] as FoodSelectivityLevel[]).map(level => {
                             const isSelected = child.foodSelectivity.level === level;
@@ -87,7 +156,17 @@ const ChildEditCard: React.FC<ChildEditCardProps> = ({ child, isEditing, onUpdat
                             );
                         })}
                     </div>
-                     <textarea placeholder="Contexto da seletividade (ex: não gosta de molhos)" value={child.foodSelectivity.context} onChange={e => handleUpdateFoodSelectivity('context', e.target.value)} rows={2} className="w-full mt-2 p-2 bg-white border border-brand-border rounded-lg text-sm"/>
+                </div>
+
+                 <div>
+                    <label className="text-sm font-semibold text-brand-text-secondary mb-1 block">Alimentos PROIBIDOS (Ódio/Recusa)</label>
+                    <textarea 
+                        placeholder="Liste o que não come DE JEITO NENHUM" 
+                        value={child.dislikedFoods} 
+                        onChange={e => handleUpdate({ dislikedFoods: e.target.value })} 
+                        rows={2} 
+                        className="w-full p-2 bg-white border border-brand-border rounded-lg text-sm"
+                    />
                 </div>
 
                  <div>

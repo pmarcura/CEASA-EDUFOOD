@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useContext, useMemo, useState, useRef } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { ArrowLeft, ChefHat, BookOpen, Heart, Camera as CameraIcon, LogOut, Edit, Save, X, LoaderCircle, Check, Plus } from 'lucide-react';
@@ -106,7 +103,7 @@ const ProfileScreen: React.FC = () => {
 
     return (
         <>
-            <div className="fixed inset-0 bg-brand-background z-30 flex flex-col animate-fade-in">
+            <div className="fixed inset-0 bg-brand-background z-[60] flex flex-col animate-fade-in">
                 <header className="p-3 flex items-center justify-between border-b border-brand-border flex-shrink-0 bg-brand-surface/80 backdrop-blur-sm sticky top-0">
                     <button onClick={() => isEditing ? handleCancel() : setIsViewingProfile(false)} className="p-1.5 rounded-full hover:bg-gray-100">
                         {isEditing ? <X size={20} /> : <ArrowLeft size={20} />}

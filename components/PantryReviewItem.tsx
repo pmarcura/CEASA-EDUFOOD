@@ -1,27 +1,36 @@
 
-
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import type { PantryItem, PantryReviewChange, PantryReviewAction } from '../types';
+import { AppContext } from '../contexts/AppContext';
 import { Trash2, Check, Edit, Save, X } from 'lucide-react';
 import { UNITS } from '../constants/units';
+import StarRating from './StarRating';
 
 interface PantryReviewItemProps {
     item: PantryItem;
     change: PantryReviewChange | undefined;
-    onAction: (itemId: string, action: PantryReviewAction, details?: { newQuantity?: number, newUnit?: string }) => void;
+    onAction: (itemId: string, action: PantryReviewAction, details?: { newQuantity?: number, newUnit?: string, newChildPreferences?: Record<string, number> }) => void;
 }
 
 const PantryReviewItem: React.FC<PantryReviewItemProps> = ({ item, change, onAction }) => {
+    const context = useContext(AppContext);
+    const { userProfile } = context || {};
+    const children = userProfile?.children || [];
+
     const [isEditing, setIsEditing] = useState(false);
     const [editState, setEditState] = useState({ quantity: item.quantity, unit: item.unit });
+    
+    // State for each child's preference
+    const [childPrefs, setChildPrefs] = useState<Record<string, number>>(item.childPreferences || {});
 
     useEffect(() => {
-        // Reset local state if the parent's change state indicates we are not editing this item anymore.
         if (change?.action !== 'update') {
             setIsEditing(false);
         }
         setEditState({ quantity: change?.newQuantity ?? item.quantity, unit: change?.newUnit ?? item.unit });
+        if (change?.newChildPreferences) {
+            setChildPrefs(change.newChildPreferences);
+        }
     }, [change, item]);
 
     const handleEdit = () => {
@@ -29,16 +38,37 @@ const PantryReviewItem: React.FC<PantryReviewItemProps> = ({ item, change, onAct
     };
 
     const handleSave = () => {
-        onAction(item.id, 'update', { newQuantity: editState.quantity, newUnit: editState.unit });
+        onAction(item.id, 'update', { 
+            newQuantity: editState.quantity, 
+            newUnit: editState.unit, 
+            newChildPreferences: childPrefs 
+        });
         setIsEditing(false);
+    };
+
+    const handleKeep = () => {
+        onAction(item.id, 'keep', { newChildPreferences: childPrefs });
+    };
+
+    const handleRatingChange = (childId: string, newRating: number) => {
+        const newPrefs = { ...childPrefs, [childId]: newRating };
+        setChildPrefs(newPrefs);
+        
+        // Auto-save preference change immediately
+        const currentAction = change?.action === 'update' ? 'update' : 'keep';
+        onAction(item.id, currentAction, { 
+            newQuantity: change?.newQuantity, 
+            newUnit: change?.newUnit, 
+            newChildPreferences: newPrefs 
+        });
     };
 
     const handleCancel = () => {
         setEditState({ quantity: item.quantity, unit: item.unit });
+        setChildPrefs(item.childPreferences || {});
         setIsEditing(false);
-        // Revert to 'keep' if it was previously marked for update
         if (change?.action === 'update') {
-             onAction(item.id, 'keep');
+             onAction(item.id, 'keep', { newChildPreferences: item.childPreferences || {} });
         }
     };
 
@@ -59,6 +89,27 @@ const PantryReviewItem: React.FC<PantryReviewItemProps> = ({ item, change, onAct
                     </p>
                 </div>
             </div>
+            
+            {/* Child Ratings Section */}
+            {children.length > 0 && (
+                <div className="mt-2 bg-white/50 rounded-lg p-2 space-y-2">
+                    {children.map(child => (
+                        <div key={child.id} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700">
+                                    {child.name.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-xs font-medium text-brand-text">{child.name}</span>
+                            </div>
+                            <StarRating 
+                                rating={childPrefs[child.id] || 0} 
+                                setRating={(r) => handleRatingChange(child.id, r)} 
+                                size={14} 
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {isEditing ? (
                 <div className="mt-3 pt-3 border-t border-brand-border/50 space-y-2 animate-fade-in">
@@ -85,7 +136,7 @@ const PantryReviewItem: React.FC<PantryReviewItemProps> = ({ item, change, onAct
             ) : (
                 <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-brand-border/50">
                     <button 
-                        onClick={() => onAction(item.id, 'keep')}
+                        onClick={handleKeep}
                         className={`flex items-center justify-center gap-1.5 text-sm font-semibold p-2 rounded-lg transition-colors ${action === 'keep' ? 'bg-green-600 text-white' : 'bg-white border text-green-700 hover:bg-green-50'}`}
                     >
                         <Check size={14} /> Manter

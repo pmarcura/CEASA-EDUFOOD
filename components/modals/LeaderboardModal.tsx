@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import ReactDOM from 'react-dom';
 import { db } from '../../firebase/config';
-import { X, LoaderCircle, Trophy, ShieldAlert } from 'lucide-react';
+import { X, LoaderCircle, Trophy, ShieldAlert, UserPlus, Check } from 'lucide-react';
 import type { LeaderboardEntry } from '../../types';
 import { AppContext } from '../../contexts/AppContext';
 
@@ -23,6 +22,7 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) => {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         const fetchLeaderboard = async () => {
@@ -30,26 +30,38 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) => {
                 const usersRef = db.collection('users');
                 const querySnapshot = await usersRef.orderBy('xp', 'desc').limit(20).get();
                 
+                const currentUserFriends = context?.userProfile?.friends || [];
+
                 const data = querySnapshot.docs.map(doc => ({
                     uid: doc.id,
                     name: doc.data().displayName || doc.data().name || 'Família Anônima',
                     avatar: doc.data().photoURL || '/professor-nutri.png',
                     xp: doc.data().xp || 0,
+                    level: doc.data().level || 1,
+                    isFriend: currentUserFriends.includes(doc.id)
                 }));
                 
                 setLeaderboard(data);
             } catch (err: any) {
                 console.error("Error fetching leaderboard:", err);
-                // Simplified error message after providing firestore.rules
-                // The console error will still show permission issues for the developer.
-                setError("Não foi possível carregar o leaderboard no momento.");
+                if (err.code === 'permission-denied') {
+                    setError("Você precisa de permissão para ver o ranking.");
+                } else {
+                    setError("Não foi possível carregar o leaderboard no momento.");
+                }
             } finally {
                 setIsLoading(false);
             }
         };
 
         fetchLeaderboard();
-    }, []);
+    }, [context?.userProfile?.friends]);
+
+    const handleAddFriend = async (targetUid: string) => {
+        if (!context?.sendFriendRequest) return;
+        setSentRequests(prev => new Set(prev).add(targetUid));
+        await context.sendFriendRequest(targetUid);
+    };
 
     const modalRoot = document.getElementById('modal-root');
     if (!modalRoot) return null;
@@ -67,8 +79,9 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) => {
              return (
                 <div className="text-center text-brand-text-secondary p-8">
                     <ShieldAlert size={40} className="mx-auto mb-4 text-yellow-500"/>
-                    <h4 className="font-bold text-brand-text mb-2">Erro ao Carregar</h4>
-                    <p className="text-sm">{error}</p>
+                    <h4 className="font-bold text-brand-text mb-2">Ranking Indisponível</h4>
+                    <p className="text-sm mb-4">{error}</p>
+                    <p className="text-xs bg-gray-100 p-2 rounded-lg">Dica: Verifique as regras de segurança do Firebase.</p>
                 </div>
             );
         }
@@ -80,12 +93,30 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) => {
                 {leaderboard.map((entry, index) => {
                     const rank = index + 1;
                     const isCurrentUser = context?.user?.uid === entry.uid;
+                    const isRequestSent = sentRequests.has(entry.uid);
+
                     return (
                         <li key={entry.uid} className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${isCurrentUser ? 'bg-brand-primary-light ring-2 ring-brand-primary' : 'bg-brand-background'}`}>
                             <div className="flex items-center justify-center w-6">{getRankIcon(rank)}</div>
                             <img src={entry.avatar} alt={entry.name} className="h-10 w-10 rounded-full object-cover border-2 border-white shadow-sm" />
-                            <p className="flex-1 font-bold text-brand-text truncate">{entry.name}</p>
-                            <p className="font-bold text-brand-text">{entry.xp} <span className="text-xs font-semibold text-brand-text-secondary">XP</span></p>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-brand-text truncate text-sm">{entry.name}</p>
+                                <p className="text-xs text-brand-text-secondary">Nível {entry.level} • {entry.xp} XP</p>
+                            </div>
+                            
+                            {!isCurrentUser && (
+                                entry.isFriend ? (
+                                    <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">Amigo</span>
+                                ) : isRequestSent ? (
+                                    <button disabled className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center gap-1">
+                                        <Check size={12} /> Enviado
+                                    </button>
+                                ) : (
+                                    <button onClick={() => handleAddFriend(entry.uid)} className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors">
+                                        <UserPlus size={16} />
+                                    </button>
+                                )
+                            )}
                         </li>
                     );
                 })}

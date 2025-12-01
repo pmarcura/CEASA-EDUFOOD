@@ -1,10 +1,8 @@
 
-
-
 import React, { useState, useContext, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { AppContext } from '../../contexts/AppContext';
-import { X, ArrowRight, Check, Award, LoaderCircle } from 'lucide-react';
+import { X, ArrowRight, Check, Award, LoaderCircle, Baby, Star } from 'lucide-react';
 import type { PantryItem, PantryReviewChange, PantryReviewAction } from '../../types';
 import PantryReviewItem from '../PantryReviewItem';
 import { ACTION_XP_VALUES } from '../../services/gamificationService';
@@ -38,7 +36,7 @@ const PantryReviewModal: React.FC = () => {
     const currentCategory = categories[currentCategoryIndex];
     const itemsForCurrentCategory = groupedPantry[currentCategoryIndex]?.[1] || [];
 
-    const handleAction = useCallback((itemId: string, action: PantryReviewAction, details?: { newQuantity?: number; newUnit?: string }) => {
+    const handleAction = useCallback((itemId: string, action: PantryReviewAction, details?: { newQuantity?: number; newUnit?: string, newChildPreferences?: Record<string, number> }) => {
         setChanges(prev => {
             const newChanges = new Map(prev);
             const originalItem = pantry.find(p => p.id === itemId);
@@ -48,6 +46,7 @@ const PantryReviewModal: React.FC = () => {
                     action, 
                     newQuantity: details?.newQuantity, 
                     newUnit: details?.newUnit,
+                    newChildPreferences: details?.newChildPreferences,
                     originalItem 
                 });
             }
@@ -91,6 +90,17 @@ const PantryReviewModal: React.FC = () => {
 
     const renderReviewStep = () => (
         <>
+            {/* Banner de Engajamento Infantil */}
+            <div className="mx-4 mt-2 bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center gap-3">
+                <div className="bg-white p-2 rounded-full shadow-sm text-blue-500">
+                    <Baby size={20} />
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-blue-800">Dica: Chame as crianças!</p>
+                    <p className="text-xs text-blue-600 leading-tight">Peça para elas darem estrelinhas para cada alimento.</p>
+                </div>
+            </div>
+
             <main className="flex-1 overflow-y-auto p-4 space-y-3">
                 <h3 className="font-bold text-lg text-brand-text">{currentCategory}</h3>
                 {itemsForCurrentCategory.map(item => (
