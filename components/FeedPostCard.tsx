@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo } from 'react';
 import type { FeedPost, SuccessTag } from '../types';
 import { Heart, MessageSquare, ChefHat, Ghost, Sparkles, Smile, Trophy, Box, CheckCircle2, ShoppingCart } from 'lucide-react';
@@ -70,7 +71,7 @@ const FeedPostCard: React.FC<FeedPostCardProps> = ({ post }) => {
             <div className="relative">
                 <img src={post.image} alt="Foto do prato" className="w-full h-auto max-h-96 object-cover bg-gray-50" />
                 
-                {/* Pantry Match Badge (Floating) */}
+                {/* Pantry Match Badge (Floating) - Only if recipe exists */}
                 {hasRecipe && pantryMatch !== null && (
                     <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2">
                         {pantryMatch >= 80 ? (
@@ -102,7 +103,7 @@ const FeedPostCard: React.FC<FeedPostCardProps> = ({ post }) => {
                         </div>
                     </div>
                     
-                    {/* Cook Button */}
+                    {/* Cook Button - Only if recipe exists */}
                     {hasRecipe && (
                         <button 
                             onClick={() => setViewingRecipe(post.recipe!)}

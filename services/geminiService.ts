@@ -980,7 +980,7 @@ export const generateFoodStory = async (item: PantryItem): Promise<FoodStrategyC
             DIRETRIZ DE TOM DE VOZ (SEGURANÇA E CLAREZA):
             
             1. **PARA ULTRAPROCESSADOS (Vermelho/Perigo):** 
-               - **story (Criança):** Fale a verdade brutal: "Isso é uma imitação de comida feita em fábrica. Tem corantes que enganam o cérebro e não deixam você ficar forte de verdade."
+               - **story (Criança):** Fale a verdade brutal, mas de forma adaptada: "Isso é uma imitação de comida feita em fábrica. Tem corantes que enganam o cérebro e não deixam você ficar forte de verdade."
                - **parentalSecret (Pais):** SEJA DURO e EDUCATIVO. "Produto industrial com perfil nutricional pobre. Excesso de calorias vazias, aditivos químicos e palatabilidade artificial projetada para viciar o paladar infantil. Evite e prefira opções caseiras."
 
             2. **PARA IN NATURA (Verde/Excelente):** 

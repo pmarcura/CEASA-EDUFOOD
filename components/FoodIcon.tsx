@@ -19,12 +19,31 @@ const isEmoji = (str: string) => {
 const FoodIcon: React.FC<FoodIconProps> = ({ name, icon, size = 'md', className = '', forceColor }) => {
     
     const displayEmoji = useMemo(() => {
-        // 1. If 'icon' prop is provided and is a valid emoji, use it.
+        const localEmoji = getFoodEmoji(name);
+        
+        // 1. If we have a 'database icon' (from AI or saved)
         if (icon && isEmoji(icon)) {
+            // INTELLIGENT OVERRIDE:
+            // Sometimes the AI returns generic icons like 📦, 🛍️, 🛒, 🥣.
+            // If our local mapper found a SPECIFIC food icon (e.g., 🥩, 🥦, 🍎),
+            // we should prioritize our local specific knowledge over the AI's generic guess.
+            
+            const genericIcons = ['📦', '🛍️', '🛒', '🥣', '🍽️', '🍴', '🥡', '📄', '🏷️', '🧊'];
+            const isLocalGeneric = genericIcons.includes(localEmoji);
+            const isRemoteGeneric = genericIcons.includes(icon);
+
+            // If remote is generic AND local is specific, use local
+            // Example: Remote says "📦" for "Patinho", Local says "🥩". Use "🥩".
+            if (isRemoteGeneric && !isLocalGeneric) {
+                return localEmoji;
+            }
+            
+            // Otherwise trust the AI/Database (e.g., if AI found a specific sushi icon we don't have)
             return icon;
         }
-        // 2. Otherwise, fallback to mapping based on name.
-        return getFoodEmoji(name);
+        
+        // 2. Fallback to local mapping based on name
+        return localEmoji;
     }, [name, icon]);
 
     const bgColor = useMemo(() => {
@@ -43,7 +62,7 @@ const FoodIcon: React.FC<FoodIconProps> = ({ name, icon, size = 'md', className 
             className={`rounded-2xl flex items-center justify-center shadow-sm flex-shrink-0 ${sizeClasses[size]} ${className}`}
             style={{ backgroundColor: bgColor }}
         >
-            <span className="filter drop-shadow-sm transform transition-transform hover:scale-110 cursor-default">
+            <span className="filter drop-shadow-sm transform transition-transform hover:scale-110 cursor-default select-none">
                 {displayEmoji}
             </span>
         </div>

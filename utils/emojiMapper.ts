@@ -1,96 +1,169 @@
 
 // Dictionary to map keywords to specific emojis
-const EMOJI_MAP: Record<string, string> = {
-    // Frutas
-    'banana': '🍌', 'maçã': '🍎', 'maca': '🍎', 'pera': '🍐', 'pêra': '🍐',
-    'laranja': '🍊', 'limão': '🍋', 'limao': '🍋', 'uva': '🍇', 'melancia': '🍉',
-    'melão': '🍈', 'melao': '🍈', 'morango': '🍓', 'cereja': '🍒', 'pêssego': '🍑',
-    'pessego': '🍑', 'manga': '🥭', 'abacaxi': '🍍', 'coco': '🥥', 'kiwi': '🥝',
-    'tomate': '🍅', 'abacate': '🥑', 'azeitona': '🫒', 'mirtilo': '🫐',
+// Organized by category for easier maintenance with priority logic
 
-    // Vegetais e Legumes
-    'cenoura': '🥕', 'batata': '🥔', 'milho': '🌽', 'pimenta': '🌶️', 'pimentão': '🫑',
-    'pepino': '🥒', 'alface': '🥬', 'brócolis': '🥦', 'brocolis': '🥦', 'alho': '🧄',
-    'cebola': '🧅', 'cogumelo': '🍄', 'amendoim': '🥜', 'feijão': '🫘', 'feijao': '🫘',
-    'ervilha': '🫛', 'batata doce': '🍠', 'berinjela': '🍆', 'espinafre': '🥬',
-    'rúcula': '🥬', 'couve': '🥬', 'abóbora': '🎃', 'abobora': '🎃',
+const EMOJI_CATEGORIES: Record<string, string[]> = {
+    // 1. FRUTAS
+    '🍎': ['maçã', 'maca', 'maça vermelha', 'maça verde', 'red apple'],
+    '🍌': ['banana', 'bananas', 'prata', 'nanica', 'caturra'],
+    '🍇': ['uva', 'uvas', 'passas', 'rubi', 'thompson'],
+    '🍉': ['melancia'],
+    '🍓': ['morango', 'morangos'],
+    '🍒': ['cereja'],
+    '🍑': ['pêssego', 'pessego', 'nectarina'],
+    '🍍': ['abacaxi'],
+    '🍋': ['limão', 'limao', 'siciliano'],
+    '🍊': ['tangerina', 'mexerica', 'laranja', 'ponkan', 'murcott'],
+    '🍋‍🟩': ['lima', 'limão taiti', 'limao taiti'],
+    '🥭': ['manga', 'mangas', 'palmer', 'tommy'],
+    '🥥': ['coco', 'água de coco', 'coco seco', 'coco ralado'],
+    '🥝': ['kiwi'],
+    '🍈': ['melão', 'melao'],
+    '🍐': ['pera', 'pêra', 'williams', 'portuguesa'],
+    '🫐': ['mirtilo', 'blueberry'],
+    '🫒': ['azeitona', 'oliva'],
+    '🥑': ['abacate', 'avocado'],
 
-    // Carboidratos e Grãos
-    'pão': '🍞', 'pao': '🍞', 'baguete': '🥖', 'pretzel': '🥨', 'bagel': '🥯',
-    'panqueca': '🥞', 'waffle': '🧇', 'macarrão': '🍝', 'macarrao': '🍝', 'noodle': '🍜',
-    'arroz': '🍚', 'curry': '🍛', 'sushi': '🍣', 'bento': '🍱', 'trigo': '🌾',
-    'farinha': '🥡', 'cereal': '🥣', 'aveia': '🥣', 'biscoito': '🍪', 'bolacha': '🍪',
-    'croissant': '🥐',
+    // 2. LEGUMES, VERDURAS E GRÃOS
+    '🧄': ['alho'],
+    '🧅': ['cebola', 'cebola roxa', 'cebola branca'],
+    '🫚': ['gengibre'],
+    '🌶️': ['pimenta', 'dedo de moça', 'biquinho', 'malagueta', 'pimenta do reino'],
+    '🫜': ['beterraba', 'nabo', 'rabanete', 'vegetal de raiz'],
+    '🥦': ['brócolis', 'brocolis', 'ninja'],
+    '🥕': ['cenoura', 'cenouras'],
+    '🌽': ['milho', 'espiga', 'milho verde'],
+    '🥒': ['pepino', 'japonês', 'caipira'],
+    '🍆': ['berinjela'],
+    '🥬': ['alface', 'couve', 'rúcula', 'agrião', 'escarola', 'verdura', 'acelga', 'espinafre', 'folha'],
+    '🫑': ['pimentão', 'pimentao', 'pimentão vermelho', 'pimentão amarelo', 'pimentão verde'],
+    '🥔': ['batata', 'inglesa', 'monalisa', 'asterix', 'batata lavada'],
+    '🍠': ['batata doce', 'inhame', 'cará', 'mandioca', 'aipim', 'macaxeira'],
+    '🫛': ['vagem', 'ervilha torta', 'ervilha fresca'],
+    '🫘': ['feijão', 'feijao', 'carioca', 'preto', 'branco', 'fradinho', 'lentilha', 'grão de bico', 'soja'],
+    '🥜': ['amendoim', 'castanha', 'nozes'],
+    '🍄‍🟫': ['cogumelo', 'shimeji', 'shitake', 'paris', 'funghi', 'cogumelo marrom', 'champignon'],
+    '🍄': ['cogumelo vermelho', 'amanita'],
+    '🌰': ['castanha portuguesa', 'noz', 'avelã'],
 
-    // Carnes e Proteínas
-    'carne': '🥩', 'bife': '🥩', 'frango': '🍗', 'peru': '🦃', 'bacon': '🥓',
-    'hambúrguer': '🍔', 'hamburguer': '🍔', 'salsicha': '🌭', 'linguiça': '🌭',
-    'ovo': '🥚', 'ovos': '🥚', 'peixe': '🐟', 'salmão': '🍣', 'camarão': '🦐',
-    'camarao': '🦐', 'lagosta': '🦞', 'caranguejo': '🦀', 'lula': '🦑', 'ostra': '🦪',
+    // 3. PROTEÍNAS E CARNES (Cortes Específicos Brasileiros)
+    '🥩': [
+        'carne', 'bife', 'patinho', 'alcatra', 'picanha', 'maminha', 'acém', 'acem', 
+        'lagarto', 'coxão', 'coxao', 'musculo', 'músculo', 'cupim', 'filé mignon', 
+        'file mignon', 'contra filé', 'contra file', 'costela', 'fraldinha', 
+        'moída', 'moida', 'roast beef', 'vitela', 'cordeiro', 'bisteca', 'chuleta',
+        'fígado', 'figado', 'miúdos', 'miudos', 'bucho', 'rabada', 'ossobuco', 'paleta',
+        'corte de carne', 'carne vermelha', 'carne de panela', 'carne assada'
+    ],
+    '🍗': [
+        'frango', 'peito de frango', 'sobrecoxa', 'coxa', 'asa', 'asinha', 'tulipa', 'galinha', 'chester', 
+        'peru', 'ave', 'pato', 'codorna', 'nugget', 'empanado', 'filezinho', 'sassami', 'coxinha da asa'
+    ],
+    '🍖': ['carne com osso', 'pernil', 'joelho', 'costelinha', 'lombo', 'bisteca de porco'],
+    '🥓': ['bacon', 'panceta', 'toucinho', 'torresmo'],
+    '🌭': ['salsicha', 'linguiça', 'linguica', 'calabresa', 'paio', 'mortadela', 'presunto', 'apresuntado', 'salami', 'salame', 'pepperoni', 'cachorro quente'],
+    '🍔': ['hambúrguer', 'hamburguer', 'burger', 'burguer'],
+    '🐟': [
+        'peixe', 'tilápia', 'tilapia', 'salmão', 'salmao', 'bacalhau', 'merluza', 
+        'sardinha', 'atum', 'truta', 'cação', 'cacao', 'linguado', 'pescada', 'tambana', 'pintado', 'filé de peixe'
+    ],
+    '🦐': ['camarão', 'camarao', 'gamba'],
+    '🦀': ['caranguejo', 'siri'],
+    '🍣': ['sushi', 'sashimi', 'niguiri', 'temaki', 'comida japonesa'],
+    '🥚': ['ovo', 'ovos', 'clara', 'gema'],
+    '🧀': ['queijo', 'mussarela', 'muçarela', 'prato', 'parmesão', 'parmesao', 'gorgonzola', 'provolone', 'minas', 'frescal', 'ricota', 'cotage', 'cottage', 'requeijão', 'requeijao', 'catupiry', 'cheddar', 'brie', 'camembert'],
 
-    // Laticínios e Derivados
-    'leite': '🥛', 'queijo': '🧀', 'manteiga': '🧈', 'iogurte': '🍦', 'requeijão': '🧀',
-    'creme de leite': '🥛',
+    // 4. PADARIA E CARBOIDRATOS
+    '🍞': ['pão', 'pao', 'forma', 'integral', 'caseiro', 'bisnaga'],
+    '🥐': ['croissant'],
+    '🥖': ['baguete', 'pão francês', 'pao frances'],
+    '🥯': ['bagel', 'rosquinha salgada'],
+    '🥨': ['pretzel'],
+    '🥞': ['panqueca', 'panquecas'],
+    '🧇': ['waffle'],
+    '🍝': ['macarrão', 'macarrao', 'espaguete', 'massa', 'penne', 'fusilli', 'gravata', 'lasanha', 'noodle', 'miojo'],
+    '🍚': ['arroz', 'cozido', 'risoto'],
+    '🥪': ['sanduíche', 'sanduiche', 'misto quente'],
+    '🍕': ['pizza', 'minipizza'],
+    '🌮': ['taco'],
+    '🌯': ['burrito', 'wrap'],
+    '🥣': ['sopa', 'mingau', 'cereal', 'aveia em flocos', 'granola', 'caldo'],
 
-    // Doces e Sobremesas
-    'sorvete': '🍨', 'bolo': '🍰', 'torta': '🥧', 'chocolate': '🍫', 'bombom': '🍬',
-    'bala': '🍬', 'pirulito': '🍭', 'mel': '🍯', 'pudim': '🍮', 'donut': '🍩',
-    'cookie': '🍪', 'gelatina': '🍮',
+    // 5. DOCES E SOBREMESAS
+    '🎂': ['bolo', 'torta doce'],
+    '🧁': ['cupcake', 'muffin'],
+    '🍰': ['fatia de bolo', 'cheesecake'],
+    '🍦': ['sorvete', 'casquinha', 'picolé', 'picole'],
+    '🍩': ['rosquinha', 'donut', 'sonho'],
+    '🍪': ['biscoito', 'bolacha', 'cookie', 'recheado', 'maisena'],
+    '🍫': ['chocolate', 'barra', 'bombom', 'achocolatado', 'toddy', 'nescau'],
+    '🍬': ['bala', 'doce', 'chiclete'],
+    '🍯': ['mel', 'melado', 'glucose'],
+    '🍮': ['pudim', 'flan', 'manjar'],
+    '🍭': ['pirulito'],
 
-    // Bebidas
-    'café': '☕', 'cafe': '☕', 'chá': '🍵', 'cha': '🍵', 'suco': '🧃', 'refrigerante': '🥤',
-    'coca': '🥤', 'água': '💧', 'agua': '💧', 'vinho': '🍷', 'cerveja': '🍺',
-    'champanhe': '🍾', 'drink': '🍹',
+    // 6. BEBIDAS
+    '☕': ['café', 'cafe', 'espresso'],
+    '🍵': ['chá', 'cha', 'matcha', 'mate'],
+    '🫖': ['bule'],
+    '🥛': ['leite', 'integral', 'desnatado', 'semi-desnatado', 'creme de leite', 'soro', 'bebida lactea'],
+    '🧃': ['suco', 'caixinha', 'néctar', 'nectar', 'refresco', 'kapo'],
+    '🥤': ['refrigerante', 'coca', 'guaraná', 'fanta', 'pepsi', 'sprite', 'milkshake', 'copo'],
+    '🧋': ['bubble tea'],
+    '🍺': ['cerveja', 'chope', 'beer'],
+    '🍷': ['vinho', 'tinto', 'seco', 'suave'],
+    '🍸': ['coquetel', 'drink'],
+    '🥂': ['espumante', 'brinde'],
+    '🍾': ['champanhe'],
+    '🥃': ['whisky', 'destilado'],
+    '🧊': ['gelo'],
 
-    // Temperos e Outros
-    'sal': '🧂', 'açúcar': '🍚', 'acucar': '🍚', 'óleo': '🌻', 'oleo': '🌻',
-    'azeite': '🫒', 'vinagre': '🏺', 'molho': '🥫', 'maionese': '🥚', 'ketchup': '🍅',
-    
-    // Categorias Genéricas
-    'lanche': '🥪', 'sanduíche': '🥪', 'pizza': '🍕', 'frita': '🍟', 'salgadinho': '🥨',
-    'sopa': '🍲', 'congelado': '🧊', 'limpeza': '🧹', 'sabão': '🧼', 'papel': '🧻'
+    // 7. INGREDIENTES DE COZINHA E OUTROS
+    '🧂': ['sal', 'tempero', 'sazon'],
+    '🧈': ['manteiga', 'margarina', 'nata'],
+    '🥫': ['molho de tomate', 'extrato', 'enlatado', 'milho em lata', 'ervilha em lata', 'conserva'],
+    '🏺': ['óleo', 'oleo', 'azeite', 'vinagre', 'shoyu'],
+    '🥡': ['marmita', 'delivery'],
+    '📦': ['caixa', 'pacote', 'item', 'produto']
 };
 
-export const getFoodEmoji = (name: string): string => {
-    const lowerName = name.toLowerCase();
+export const getFoodEmoji = (itemName: string): string => {
+    if (!itemName) return '📦';
     
-    // 1. Direct Word Match (Check if the item name contains any key)
-    for (const key in EMOJI_MAP) {
-        // We check boundaries to avoid matching 'alface' inside 'alfaceira' (rare, but good practice)
-        // Or simply check includes for flexibility
-        if (lowerName.includes(key)) {
-            return EMOJI_MAP[key];
+    const lowerName = itemName.toLowerCase().trim();
+    
+    // First pass: Check for exact matches or high-priority substrings
+    // We prioritize longer matches to avoid partial confusion (e.g., "batata doce" > "batata")
+    
+    let bestMatchEmoji = '📦';
+    let maxMatchLength = 0;
+
+    for (const [emoji, keywords] of Object.entries(EMOJI_CATEGORIES)) {
+        for (const keyword of keywords) {
+            // Check if the item name contains the keyword
+            if (lowerName.includes(keyword)) {
+                // If it matches, check if it's a longer/more specific match than what we have
+                if (keyword.length > maxMatchLength) {
+                    maxMatchLength = keyword.length;
+                    bestMatchEmoji = emoji;
+                }
+            }
         }
     }
 
-    // 2. Fallback based on common substrings or categories if simple match fails
-    if (lowerName.includes('caixa') || lowerName.includes('pacote')) return '📦';
-    if (lowerName.includes('garrafa') || lowerName.includes('bebida')) return '🍾';
-    if (lowerName.includes('lata')) return '🥫';
-    if (lowerName.includes('doce')) return '🍬';
-    if (lowerName.includes('molho')) return '🥫';
-
-    // 3. Default
-    return '🛍️';
+    return bestMatchEmoji;
 };
 
 export const getCategoryColor = (emoji: string): string => {
-    // Returns a background color class based on the emoji type (heuristic)
-    const fruits = ['🍌','🍎','🍐','🍊','🍋','🍇','🍉','🍈','🍓','🍒','🍑','🥭','🍍','🥥','🥝'];
-    const veggies = ['🥕','🥔','🌽','🌶️','🫑','🥒','🥬','🥦','🧄','🧅','🍄','🫘','🫛','🍠','🍆','🎃'];
-    const meat = ['🥩','🍗','🦃','🥓','🍔','🌭'];
-    const seafood = ['🐟','🍣','🦐','🦞','🦀','🦑','🦪'];
-    const dairy = ['🥛','🧀','🧈','🍦'];
-    const drinks = ['☕','🍵','🧃','🥤','🍷','🍺','🍾','🍹','💧'];
-    const sweets = ['🍨','🍰','🥧','🍫','🍬','🍭','🍯','🍮','🍩','🍪'];
-
-    if (fruits.includes(emoji)) return '#FEF3C7'; // Yellow/Orange
-    if (veggies.includes(emoji)) return '#D1FAE5'; // Green
-    if (meat.includes(emoji)) return '#FEE2E2'; // Red
-    if (seafood.includes(emoji)) return '#E0F2FE'; // Blue
-    if (dairy.includes(emoji)) return '#F3F4F6'; // Gray/White
-    if (drinks.includes(emoji)) return '#DBEAFE'; // Blue
-    if (sweets.includes(emoji)) return '#FCE7F3'; // Pink
-
-    return '#F3F4F6'; // Default Gray
+    // Defines background colors for categories based on the emoji returned
+    // Proteins
+    if (['🥩', '🍗', '🍖', '🥓', '🌭', '🍔', '🐟', '🦐', '🦀', '🍣', '🥚'].includes(emoji)) return '#FEE2E2'; // Red-100
+    // Fruits & Veggies
+    if (['🍎', '🍌', '🍇', '🍉', '🍓', '🍒', '🍑', '🍍', '🍋', '🍊', '🍋‍🟩', '🥭', '🥥', '🥝', '🍈', '🍐', '🫐', '🫒', '🥑', '🥦', '🥕', '🌽', '🥒', '🍆', '🥬', '🫑', '🥔', '🍠', '🫛', '🫘', '🥜', '🍄', '🍄‍🟫', '🌰', '🧄', '🧅', '🫚', '🌶️', '🫜'].includes(emoji)) return '#DCFCE7'; // Green-100
+    // Dairy & Bakery
+    if (['🥛', '🧀', '🧈', '🍞', '🥐', '🥖', '🥯', '🥨', '🥞', '🧇', '🥪'].includes(emoji)) return '#FEF3C7'; // Yellow-100
+    // Sweets & Processed
+    if (['🎂', '🧁', '🍰', '🍦', '🍩', '🍪', '🍫', '🍬', '🍯', '🍮', '🍭', '🥤', '🍕', '🍟'].includes(emoji)) return '#F3E8FF'; // Purple-100
+    
+    return '#F3F4F6'; // Gray-100 default
 };

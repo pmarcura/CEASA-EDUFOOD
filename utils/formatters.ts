@@ -14,7 +14,7 @@ export const normalizeUnit = (unit: string): string => {
     if (['kg', 'quilo', 'quilos', 'quilograma', 'quilogramas'].includes(u)) return 'kg';
     if (['ml', 'mililitro', 'mililitros'].includes(u)) return 'ml';
     if (['l', 'litro', 'litros'].includes(u)) return 'l';
-    if (['un', 'unidade', 'unidades'].includes(u)) return 'un';
+    if (['un', 'unidade', 'und'].includes(u)) return 'un';
     if (['cx', 'caixa'].includes(u)) return 'caixa';
     if (['pc', 'pct', 'pacote'].includes(u)) return 'pacote';
     if (['lt', 'lata'].includes(u)) return 'lata';

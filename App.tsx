@@ -33,6 +33,7 @@ import CookNowModal from './components/modals/CookNowModal';
 import { formatQuantity, normalizeUnit, toTitleCase } from './utils/formatters';
 import { calculateDeduction } from './utils/unitConversion';
 import { notifyFriends, sendFriendRequest, acceptFriendRequest } from './services/socialService';
+import { checkAndGenerateAIPosts } from './services/aiCommunityService';
 
 // ... (keeping sampleRecipe and initialFeedPosts same as before - implicit) ...
 const sampleRecipe: Recipe = {
@@ -66,8 +67,8 @@ const initialFeedPosts: FeedPost[] = [
   {
     id: '1',
     authorName: 'Ana Silva',
-    authorAvatar: '/avatars/avatar-1.jpg',
-    image: '/dishes/dish-1.jpg',
+    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ana&backgroundColor=b6e3f4',
+    image: 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&q=80&w=600',
     caption: 'Meu filho só comeu cenoura quando virou um foguete! 🚀🥕 Adicionamos gergelim como estrelas e ficou um sucesso!',
     likes: 25,
     likedBy: [],
@@ -78,8 +79,8 @@ const initialFeedPosts: FeedPost[] = [
   {
     id: '2',
     authorName: 'Bruno Costa',
-    authorAvatar: '/avatars/avatar-2.jpg',
-    image: '/dishes/dish-2.jpg',
+    authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bruno&backgroundColor=ffdfbf',
+    image: 'https://images.unsplash.com/photo-1627308595229-7830a5c91f9f?auto=format&fit=crop&q=80&w=600',
     caption: 'Panquecas de espinafre para um café da manhã de super-herói! O segredo é misturar tudo no liquidificador.',
     likes: 30,
     likedBy: [],
@@ -129,6 +130,20 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
   
+  // Initialize AI Community Posts
+  useEffect(() => {
+      const initCommunity = async () => {
+          if (!user) return;
+          const aiPosts = await checkAndGenerateAIPosts(feedPosts);
+          if (aiPosts.length > 0) {
+              setFeedPosts(prev => [...aiPosts, ...prev]);
+          }
+      };
+      // Delay slightly to not block initial render
+      const timer = setTimeout(initCommunity, 2000);
+      return () => clearTimeout(timer);
+  }, [user]); // Runs when user logs in
+
   // Data Listeners
   useEffect(() => {
     if (!user) {

@@ -1,5 +1,4 @@
 
-
 import React, { useContext, useState, useMemo } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { Plus, Heart, Sparkles, Utensils, Search } from 'lucide-react';
